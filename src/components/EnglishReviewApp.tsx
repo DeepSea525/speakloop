@@ -38,6 +38,8 @@ import type {
 } from "@/lib/types";
 
 const MODEL = "doubao-seed-2-0-mini-260428";
+const DEFAULT_VOICE_NAME = "google us english";
+const DEFAULT_VOICE_RATE = 1;
 
 type BusyState = "extract" | "chat" | "save" | "history" | "evaluate" | null;
 type TabKey = "chat" | "import" | "review" | "practice";
@@ -1408,21 +1410,23 @@ type SpeechState = {
 function useSpeech(): SpeechState {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [voiceURI, setVoiceURIState] = useState("");
-  const [rate, setRateState] = useState(0.82);
+  const [rate, setRateState] = useState(DEFAULT_VOICE_RATE);
 
   useEffect(() => {
     function loadVoices() {
       const savedVoiceURI = localStorage.getItem("voiceURI") || "";
-      const savedRate = Number(localStorage.getItem("voiceRate") || "0.82");
+      const savedRateValue = localStorage.getItem("voiceRate");
+      const savedRate = savedRateValue ? Number(savedRateValue) : DEFAULT_VOICE_RATE;
       const nextVoices = window.speechSynthesis
         .getVoices()
         .filter((voice) => voice.lang.toLowerCase().startsWith("en"))
         .sort((a, b) => scoreVoice(b) - scoreVoice(a));
+      const defaultVoice = nextVoices.find((voice) => voice.name.toLowerCase() === DEFAULT_VOICE_NAME);
 
       setVoices(nextVoices);
-      setVoiceURIState((current) => current || savedVoiceURI || nextVoices[0]?.voiceURI || "");
+      setVoiceURIState((current) => current || savedVoiceURI || defaultVoice?.voiceURI || nextVoices[0]?.voiceURI || "");
       setRateState((current) => {
-        if (!Number.isFinite(savedRate) || current !== 0.82) return current;
+        if (!Number.isFinite(savedRate) || current !== DEFAULT_VOICE_RATE) return current;
         return savedRate;
       });
     }
@@ -1477,6 +1481,8 @@ function useSpeech(): SpeechState {
 function scoreVoice(voice: SpeechSynthesisVoice) {
   const name = voice.name.toLowerCase();
   let score = voice.lang.toLowerCase() === "en-us" ? 50 : 20;
+  if (name === DEFAULT_VOICE_NAME) score += 100;
+  if (name.includes("google") && voice.lang.toLowerCase() === "en-us") score += 60;
   ["samantha", "ava", "allison", "jenny", "aria", "natural", "premium", "enhanced"].forEach((keyword, index) => {
     if (name.includes(keyword)) score += 30 - index;
   });
