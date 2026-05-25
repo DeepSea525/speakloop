@@ -28,6 +28,7 @@ import {
 } from "@/lib/review";
 import type {
   ChatMessage,
+  CoachingResult,
   ConversationRecord,
   DatabaseMessage,
   DatabaseReviewItem,
@@ -41,8 +42,10 @@ const MODEL = "doubao-seed-2-0-mini-260428";
 const DEFAULT_VOICE_NAME = "google us english";
 const DEFAULT_VOICE_RATE = 1;
 
-type BusyState = "extract" | "chat" | "save" | "history" | "evaluate" | null;
+type BusyState = "extract" | "chat" | "save" | "history" | "evaluate" | "coach" | null;
 type TabKey = "chat" | "import" | "review" | "practice";
+
+const SCENES = ["日常生活", "带小朋友", "吃饭", "工作沟通", "朋友闲聊", "旅行", "购物", "解释产品"];
 
 const tabs: Array<{ key: TabKey; label: string; icon: typeof MessageCircle }> = [
   { key: "chat", label: "对话", icon: MessageCircle },
@@ -90,6 +93,8 @@ export default function EnglishReviewApp() {
   const [transcript, setTranscript] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
   const [chatInput, setChatInput] = useState("");
+  const [chatScene, setChatScene] = useState(SCENES[0]);
+  const [coaching, setCoaching] = useState<CoachingResult | null>(null);
   const [chatConversationId, setChatConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationRecord[]>([]);
   const [extractionSourceType, setExtractionSourceType] = useState<"paste" | "chat">("paste");
@@ -273,6 +278,7 @@ export default function EnglishReviewApp() {
     setChatConversationId(null);
     setMessages([INITIAL_MESSAGE]);
     setChatInput("");
+    setCoaching(null);
     setError("");
     setActiveTab("chat");
   }
@@ -290,6 +296,103 @@ export default function EnglishReviewApp() {
 
     const { error: insertError } = await supabase.from("messages").insert(rows);
     if (insertError) throw insertError;
+  }
+
+  async function runCoaching(text?: string) {
+    const sourceText = (text ?? chatInput).trim();
+    const localSettings = syncLocalSettings();
+    const currentApiKey = localSettings.apiKey || apiKey;
+
+    if (!currentApiKey.trim()) {
+      setError("请先在设置里填写火山方舟 API key。");
+      setSettingsOpen(true);
+      return;
+    }
+
+    if (!sourceText) {
+      setError("先输入一句你想表达的中文、英文或中英混合内容。");
+      return;
+    }
+
+    setBusy("coach");
+    setError("");
+    setCoaching(null);
+
+    try {
+      const response = await fetch("/api/ark/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apiKey: currentApiKey.trim(),
+          model: MODEL,
+          text: sourceText,
+          scene: chatScene,
+        }),
+      });
+
+      const payload = (await response.json()) as { result?: CoachingResult; error?: string };
+      if (!response.ok || !payload.result) {
+        throw new Error(payload.error || "表达求助失败。");
+      }
+
+      setCoaching(payload.result);
+      speech.speak(payload.result.practice_line || payload.result.recommended_en);
+    } catch (coachError) {
+      setError(coachError instanceof Error ? coachError.message : "表达求助失败。");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function addCoachingToReview(result: CoachingResult) {
+    const prompt = `场景：${result.scene || chatScene}\n你想说：${result.intent_cn}`;
+    const item: ReviewItem = {
+      id: makeId("review"),
+      kind: "sentence",
+      prompt_cn: prompt,
+      answer_en: result.recommended_en,
+      explanation: [
+        result.pattern ? `模板：${result.pattern}` : "",
+        result.alternatives.length ? `也可以说：${result.alternatives.join(" / ")}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      tags: ["coach", result.scene || chatScene],
+      difficulty: 2,
+      due_at: nowIso(),
+    };
+
+    if (supabase && userId) {
+      const { data, error: insertError } = await supabase
+        .from("review_items")
+        .insert({
+          user_id: userId,
+          conversation_id: chatConversationId,
+          kind: item.kind,
+          prompt_cn: item.prompt_cn,
+          answer_en: item.answer_en,
+          explanation: item.explanation,
+          tags: item.tags,
+          difficulty: item.difficulty,
+          due_at: item.due_at,
+        })
+        .select("*")
+        .single();
+
+      if (insertError) {
+        setError(insertError.message);
+        return;
+      }
+
+      const savedItem = toReviewItem(data as DatabaseReviewItem);
+      setItems((current) => [savedItem, ...current]);
+      setSelectedItemId(savedItem.id);
+    } else {
+      setItems((current) => [item, ...current]);
+      setSelectedItemId(item.id);
+    }
+
+    setStatus("已加入复习");
   }
 
   async function runExtraction(source: "paste" | "chat") {
@@ -455,6 +558,7 @@ export default function EnglishReviewApp() {
           apiKey: currentApiKey.trim(),
           model: MODEL,
           messages: nextMessages,
+          scene: chatScene,
         }),
       });
 
@@ -596,8 +700,15 @@ export default function EnglishReviewApp() {
             <ConversationTab
               messages={messages}
               chatInput={chatInput}
+              scene={chatScene}
+              scenes={SCENES}
+              coaching={coaching}
               onChatInputChange={setChatInput}
+              onSceneChange={setChatScene}
               onSendChat={sendChatMessage}
+              onRunCoaching={() => runCoaching()}
+              onUseCoaching={(value) => setChatInput(value)}
+              onAddCoaching={addCoachingToReview}
               onExtractChat={() => runExtraction("chat")}
               onSpeak={speech.speak}
               onPrimeSpeech={speech.prime}
@@ -729,8 +840,15 @@ function practicePrompt(item: ReviewItem) {
 function ConversationTab({
   messages,
   chatInput,
+  scene,
+  scenes,
+  coaching,
   onChatInputChange,
+  onSceneChange,
   onSendChat,
+  onRunCoaching,
+  onUseCoaching,
+  onAddCoaching,
   onExtractChat,
   onSpeak,
   onPrimeSpeech,
@@ -743,8 +861,15 @@ function ConversationTab({
 }: {
   messages: ChatMessage[];
   chatInput: string;
+  scene: string;
+  scenes: string[];
+  coaching: CoachingResult | null;
   onChatInputChange: (value: string) => void;
+  onSceneChange: (value: string) => void;
   onSendChat: () => void;
+  onRunCoaching: () => void;
+  onUseCoaching: (value: string) => void;
+  onAddCoaching: (result: CoachingResult) => void;
   onExtractChat: () => void;
   onSpeak: (text: string) => void;
   onPrimeSpeech: () => void;
@@ -808,6 +933,30 @@ function ConversationTab({
         )}
       </div>
 
+      <div className="mb-3 rounded-lg border border-[#ddd5c8] bg-white p-3 shadow-sm">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold">场景练习</p>
+            <p className="mt-1 text-xs leading-5 text-[#746f68]">选择一个场景，AI 会更像在真实语境里陪你说。</p>
+          </div>
+          <span className="rounded-full bg-[#ebe7df] px-2 py-1 text-xs font-semibold text-[#5d6b57]">{scene}</span>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {scenes.map((candidate) => (
+            <button
+              key={candidate}
+              type="button"
+              onClick={() => onSceneChange(candidate)}
+              className={`shrink-0 rounded-md border px-3 py-2 text-xs font-semibold ${
+                candidate === scene ? "border-[#5d6b57] bg-[#ebe7df] text-[#191715]" : "border-[#ddd5c8] bg-[#fffdf8] text-[#746f68]"
+              }`}
+            >
+              {candidate}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-[#ddd5c8] bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-[#e8e1d6] px-4 py-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
@@ -858,6 +1007,56 @@ function ConversationTab({
         </div>
 
         <div className="border-t border-[#e8e1d6] p-3">
+          {coaching ? (
+            <section className="mb-3 rounded-lg border border-[#ddd5c8] bg-[#fffdf8] p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold">表达陪练</p>
+                  <p className="mt-1 text-xs leading-5 text-[#746f68]">{coaching.intent_cn}</p>
+                </div>
+                <span className="shrink-0 rounded-full bg-[#ebe7df] px-2 py-1 text-xs font-semibold text-[#5d6b57]">
+                  {coaching.scene}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onSpeak(coaching.practice_line || coaching.recommended_en)}
+                className="w-full rounded-md bg-white px-3 py-2 text-left text-sm font-semibold leading-6 text-[#191715]"
+              >
+                {coaching.recommended_en}
+              </button>
+              {coaching.alternatives.length ? (
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {coaching.alternatives.slice(0, 2).map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => onSpeak(item)}
+                      className="rounded-md border border-[#ddd5c8] bg-white px-3 py-2 text-left text-xs leading-5 text-[#746f68]"
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => onUseCoaching(coaching.recommended_en)}
+                  className="h-9 rounded-md bg-[#191715] px-3 text-xs font-semibold text-white"
+                >
+                  用这句继续聊
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onAddCoaching(coaching)}
+                  className="h-9 rounded-md border border-[#ddd5c8] bg-white px-3 text-xs font-semibold text-[#191715]"
+                >
+                  加入复习
+                </button>
+              </div>
+            </section>
+          ) : null}
           <div className="flex gap-2">
             <input
               value={chatInput}
@@ -868,6 +1067,14 @@ function ConversationTab({
               placeholder="用英语说一句..."
               className="h-12 min-w-0 flex-1 rounded-md border border-[#ddd5c8] bg-[#fffdf8] px-3 text-base outline-none focus:border-[#5d6b57] focus:ring-2 focus:ring-[#5d6b57]/15 sm:text-sm"
             />
+            <button
+              type="button"
+              onClick={onRunCoaching}
+              className="inline-flex h-12 shrink-0 items-center justify-center gap-1.5 rounded-md border border-[#ddd5c8] bg-[#fffdf8] px-3 text-sm font-semibold text-[#191715]"
+            >
+              {busy === "coach" ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
+              帮我说
+            </button>
             <button
               type="button"
               onPointerDown={() => {

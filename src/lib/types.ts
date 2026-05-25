@@ -52,6 +52,15 @@ export type PracticeFeedback = {
   alternatives: string[];
 };
 
+export type CoachingResult = {
+  intent_cn: string;
+  recommended_en: string;
+  alternatives: string[];
+  practice_line: string;
+  pattern: string;
+  scene: string;
+};
+
 export type ExtractedIssue = {
   original: string;
   reason: string;
