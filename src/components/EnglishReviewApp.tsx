@@ -45,7 +45,45 @@ const DEFAULT_VOICE_RATE = 1;
 type BusyState = "extract" | "chat" | "save" | "history" | "evaluate" | "coach" | null;
 type TabKey = "chat" | "import" | "review" | "practice";
 
-const SCENES = ["日常生活", "带小朋友", "吃饭", "工作沟通", "朋友闲聊", "旅行", "购物", "解释产品"];
+const SCENE_STARTERS: Record<string, string[]> = {
+  日常闲聊: [
+    "Let’s warm up with something simple. What’s one small thing that happened today?",
+    "Imagine we just met at a cafe. How would you describe your day so far?",
+    "Tell me one ordinary detail from today, even if it feels boring.",
+  ],
+  朋友邻居: [
+    "Imagine you run into a neighbor in the elevator. What would you say first?",
+    "A friend asks why you look tired today. How would you answer?",
+    "Your neighbor casually asks what you did this weekend. What would you say?",
+  ],
+  工作小事: [
+    "A colleague asks how your shift went. What would you tell them?",
+    "You need to explain a small problem at work. What happened?",
+    "Your teammate asks what you’re busy with today. How would you reply?",
+  ],
+  旅行购物: [
+    "You’re in a small shop abroad and can’t find what you need. What would you ask?",
+    "Imagine you’re ordering coffee in another country. What would you say?",
+    "You need to ask for directions politely. Where are you trying to go?",
+  ],
+  抓马短剧: [
+    "Your friend suddenly cancels dinner at the last minute. How would you react?",
+    "Someone keeps borrowing your things and never returns them. What would you say?",
+    "You overhear surprising news from a friend. How would you ask what happened?",
+  ],
+  解释产品: [
+    "Explain SpeakLoop to a friend in one simple sentence.",
+    "Someone asks what this product is for. How would you describe it?",
+    "Tell me why turning conversations into review cards could help your English.",
+  ],
+  带小朋友: [
+    "Your child keeps pouring water back and forth at dinner. What would you say?",
+    "A child refuses to put on their shoes before going out. How would you remind them?",
+    "Your child asks for one more cartoon before bedtime. What would you say?",
+  ],
+};
+
+const SCENES = Object.keys(SCENE_STARTERS);
 
 const tabs: Array<{ key: TabKey; label: string; icon: typeof MessageCircle }> = [
   { key: "chat", label: "对话", icon: MessageCircle },
@@ -57,12 +95,25 @@ const tabs: Array<{ key: TabKey; label: string; icon: typeof MessageCircle }> = 
 const INITIAL_MESSAGE: ChatMessage = {
   id: "initial_assistant_message",
   role: "assistant",
-  content: "Hi, I’m here to chat with you in English. Say anything about your day, even a small thing, and I’ll keep the conversation going.",
+  content: sceneStarter(SCENES[0]),
   createdAt: "2026-01-01T00:00:00.000Z",
 };
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function sceneStarter(scene: string, random = false) {
+  const starters = SCENE_STARTERS[scene] ?? SCENE_STARTERS[SCENES[0]];
+  if (!random) return starters[0];
+  return starters[Math.floor(Math.random() * starters.length)];
+}
+
+function firstMessageForScene(scene: string, random = false): ChatMessage {
+  return {
+    ...INITIAL_MESSAGE,
+    content: sceneStarter(scene, random),
+  };
 }
 
 function toReviewItem(row: DatabaseReviewItem): ReviewItem {
@@ -264,7 +315,7 @@ export default function EnglishReviewApp() {
         setActiveTab("import");
       } else {
         setChatConversationId(conversationId);
-        setMessages(loadedMessages.length ? loadedMessages : [INITIAL_MESSAGE]);
+        setMessages(loadedMessages.length ? loadedMessages : [firstMessageForScene(chatScene)]);
         setActiveTab("chat");
       }
     } catch (loadError) {
@@ -276,11 +327,21 @@ export default function EnglishReviewApp() {
 
   function startNewConversation() {
     setChatConversationId(null);
-    setMessages([INITIAL_MESSAGE]);
+    setMessages([firstMessageForScene(chatScene, true)]);
     setChatInput("");
     setCoaching(null);
     setError("");
     setActiveTab("chat");
+  }
+
+  function changeScene(value: string) {
+    setChatScene(value);
+    setCoaching(null);
+    setError("");
+    setMessages((current) => {
+      if (chatConversationId || current.length > 1) return current;
+      return [firstMessageForScene(value, true)];
+    });
   }
 
   async function saveMessages(conversationId: string, nextMessages: ChatMessage[]) {
@@ -704,7 +765,7 @@ export default function EnglishReviewApp() {
               scenes={SCENES}
               coaching={coaching}
               onChatInputChange={setChatInput}
-              onSceneChange={setChatScene}
+              onSceneChange={changeScene}
               onSendChat={sendChatMessage}
               onRunCoaching={() => runCoaching()}
               onUseCoaching={(value) => setChatInput(value)}
@@ -937,7 +998,9 @@ function ConversationTab({
         <div className="mb-2 flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold">场景练习</p>
-            <p className="mt-1 text-xs leading-5 text-[#746f68]">选择一个场景，AI 会更像在真实语境里陪你说。</p>
+            <p className="mt-1 text-xs leading-5 text-[#746f68]">
+              切换标签会随机换一句开场，让你直接进入一个可聊的情境。
+            </p>
           </div>
           <span className="rounded-full bg-[#ebe7df] px-2 py-1 text-xs font-semibold text-[#5d6b57]">{scene}</span>
         </div>
