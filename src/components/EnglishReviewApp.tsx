@@ -443,6 +443,9 @@ export default function EnglishReviewApp() {
     setChatInput("");
     setBusy("chat");
     setError("");
+    if (localSettings.autoReadAssistant) {
+      speech.prime();
+    }
 
     try {
       const response = await fetch("/api/ark/chat", {
@@ -597,6 +600,7 @@ export default function EnglishReviewApp() {
               onSendChat={sendChatMessage}
               onExtractChat={() => runExtraction("chat")}
               onSpeak={speech.speak}
+              onPrimeSpeech={speech.prime}
               autoReadAssistant={autoReadAssistant}
               conversations={chatConversations}
               currentConversationId={chatConversationId}
@@ -729,6 +733,7 @@ function ConversationTab({
   onSendChat,
   onExtractChat,
   onSpeak,
+  onPrimeSpeech,
   autoReadAssistant,
   conversations,
   currentConversationId,
@@ -742,6 +747,7 @@ function ConversationTab({
   onSendChat: () => void;
   onExtractChat: () => void;
   onSpeak: (text: string) => void;
+  onPrimeSpeech: () => void;
   autoReadAssistant: boolean;
   conversations: ConversationRecord[];
   currentConversationId: string | null;
@@ -864,6 +870,9 @@ function ConversationTab({
             />
             <button
               type="button"
+              onPointerDown={() => {
+                if (autoReadAssistant) onPrimeSpeech();
+              }}
               onClick={onSendChat}
               className="inline-flex h-12 min-w-16 items-center justify-center gap-1.5 rounded-md bg-[#8f2638] px-3 text-sm font-semibold text-white sm:min-w-20 sm:gap-2 sm:px-4"
             >
@@ -1405,6 +1414,7 @@ type SpeechState = {
   setVoiceURI: (value: string) => void;
   setRate: (value: number) => void;
   speak: (text: string) => void;
+  prime: () => void;
 };
 
 function useSpeech(): SpeechState {
@@ -1449,9 +1459,30 @@ function useSpeech(): SpeechState {
     localStorage.setItem("voiceRate", String(value));
   }, []);
 
+  const prime = useCallback(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    window.speechSynthesis.resume();
+    const utterance = new SpeechSynthesisUtterance(".");
+    const voice = voices.find((candidate) => candidate.voiceURI === voiceURI);
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang;
+    } else {
+      utterance.lang = "en-US";
+    }
+    utterance.rate = rate;
+    utterance.volume = 0.01;
+    window.speechSynthesis.speak(utterance);
+    window.setTimeout(() => {
+      if (!window.speechSynthesis.speaking) return;
+      window.speechSynthesis.cancel();
+    }, 80);
+  }, [rate, voiceURI, voices]);
+
   const speak = useCallback(
     (text: string) => {
       if (!text.trim()) return;
+      window.speechSynthesis.resume();
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       const voice = voices.find((candidate) => candidate.voiceURI === voiceURI);
@@ -1475,6 +1506,7 @@ function useSpeech(): SpeechState {
     setVoiceURI,
     setRate,
     speak,
+    prime,
   };
 }
 
