@@ -14,7 +14,7 @@ npm run dev
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
 ARK_API_KEY=...
 ```
 
@@ -25,11 +25,11 @@ ARK_API_KEY=...
 - 火山方舟 API key 只配置为本地 `.env.local` 或 Vercel server-side 环境变量：`ARK_API_KEY`。
 - 不要在任何 `NEXT_PUBLIC_` 变量里放 Ark key、Supabase `service_role` 或其他服务端密钥。
 - 线上用户不需要填写 API key；前端不会保存、发送或展示用户自己的 Ark key。
-- Supabase URL 和 anon key 是公开客户端配置，可以使用 `NEXT_PUBLIC_`：
+- Supabase URL 和 publishable key 是公开客户端配置，可以使用 `NEXT_PUBLIC_`：
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
 ```
 
 - 如果缺少 Supabase 环境变量，应用会显示配置提示，不再进入演示模式。
@@ -46,7 +46,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 
 1. 在 Vercel Project Settings 中配置：
    - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    - `ARK_API_KEY`
 2. 在火山方舟后台给该 key 设置预算或额度上限。
 3. 部署后用一个新浏览器访问线上域名，确认会出现昵称设置弹窗。

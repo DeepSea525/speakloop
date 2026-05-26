@@ -36,9 +36,10 @@ export function getArkApiKey() {
 
 export async function getAuthenticatedUserFromRequest(request: Request): Promise<AuthenticatedRequest> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const publishableKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!url || !anonKey) {
+  if (!url || !publishableKey) {
     throw new ApiRequestError("学习空间未配置。请设置 Supabase 环境变量。", 503);
   }
 
@@ -47,7 +48,7 @@ export async function getAuthenticatedUserFromRequest(request: Request): Promise
     throw new ApiRequestError("请先进入学习空间后再使用 AI。", 401);
   }
 
-  const supabase = createClient(url, anonKey, {
+  const supabase = createClient(url, publishableKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,

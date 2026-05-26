@@ -165,7 +165,10 @@ export default function EnglishReviewApp() {
   const [practiceFeedback, setPracticeFeedback] = useState<PracticeFeedback | null>(null);
   const [busy, setBusy] = useState<BusyState>(null);
   const [status, setStatus] = useState(() => {
-    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    if (
+      process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+    ) {
       return "正在连接学习空间";
     }
     return "学习空间未配置";
