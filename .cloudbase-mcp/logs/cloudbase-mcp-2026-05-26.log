@@ -214,3 +214,42 @@
   "eventCode": "toolkit_lifecycle",
   "deviceId": "5ec37c96..."
 }
+[2026-05-26T16:15:38.129+00:00] [DEBUG] [cache] Using default TTL {
+  "ttlMs": 86400000
+}
+[2026-05-26T16:15:38.160+00:00] [DEBUG] report_init {
+  "enabled": true,
+  "deviceId": "5ec37c96...",
+  "ide": "none"
+}
+[2026-05-26T16:15:38.182+00:00] [DEBUG] [cache] evaluated cache meta {
+  "ageMs": 493745,
+  "ttlMs": 86400000,
+  "valid": true
+}
+[2026-05-26T16:15:38.183+00:00] [DEBUG] [downloadResources] 使用缓存（快速路径）
+[2026-05-26T16:15:38.195+00:00] [INFO] TencentCloudBase MCP Server running on stdio
+[2026-05-26T16:15:38.195+00:00] [DEBUG] [telemetry] 生命周期事件 envId 获取结果 {
+  "event": "start",
+  "envId": "speakloop-d0gycd2krc8b125e9",
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID",
+  "hasCloudBaseOptions": false,
+  "cloudBaseOptionsEnvId": null
+}
+[2026-05-26T16:15:38.195+00:00] [DEBUG] [telemetry] 生命周期事件上报参数 {
+  "event": "start",
+  "eventData": {
+    "event": "start",
+    "envId": "speakloop-d0gycd2krc8b125e9",
+    "nodeVersion": "v22.22.2",
+    "osType": "Linux",
+    "osRelease": "5.4.119-19-0009-03_2.0.1-00029-gee3a514c359c",
+    "arch": "x64",
+    "mcpVersion": "2.14.2"
+  },
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID"
+}
+[2026-05-26T16:15:38.270+00:00] [DEBUG] report_success {
+  "eventCode": "toolkit_lifecycle",
+  "deviceId": "5ec37c96..."
+}
