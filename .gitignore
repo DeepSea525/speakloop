@@ -1,19 +1,46 @@
-# Session credentials
-.session-env.json
-.mcporter/
-.skills/
-.capabilities/
-# Dependencies
-node_modules/
-# Auto-generated
-.workspace-info.md
-.local/share/opencode/
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# >>> tcb-remote-workspace internal ignore rules >>>
-.session-env.json
-.mcporter/
-.skills/
-.capabilities/
-.workspace-info.md
-.local/share/opencode/
-# <<< tcb-remote-workspace internal ignore rules <<<
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+/screenshots
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# supabase local link/cache
+supabase/.temp/
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
