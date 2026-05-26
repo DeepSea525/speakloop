@@ -102,3 +102,11 @@ export type DatabaseReviewItem = {
   mastered_at: string | null;
   created_at: string;
 };
+
+export type UserProfile = {
+  user_id: string;
+  display_name: string;
+  display_name_normalized: string;
+  created_at: string;
+  updated_at: string;
+};

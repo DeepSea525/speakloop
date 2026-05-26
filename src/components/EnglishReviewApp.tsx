@@ -6,7 +6,6 @@ import {
   ClipboardPaste,
   Headphones,
   History,
-  KeyRound,
   Loader2,
   MessageCircle,
   Plus,
@@ -24,7 +23,6 @@ import {
   makeId,
   nextDueDate,
   reviewItemsFromExtraction,
-  sampleReviewItems,
 } from "@/lib/review";
 import type {
   ChatMessage,
@@ -36,6 +34,7 @@ import type {
   PracticeFeedback,
   ReviewItem,
   ReviewRating,
+  UserProfile,
 } from "@/lib/types";
 
 const MODEL = "doubao-seed-2-0-mini-260428";
@@ -116,6 +115,15 @@ function firstMessageForScene(scene: string, random = false): ChatMessage {
   };
 }
 
+function normalizeDisplayName(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+function suggestDisplayName(value: string) {
+  const base = value.trim() || "SpeakLoop 用户";
+  return `${base}${Math.floor(100 + Math.random() * 900)}`;
+}
+
 function toReviewItem(row: DatabaseReviewItem): ReviewItem {
   return {
     id: row.id,
@@ -139,7 +147,8 @@ export default function EnglishReviewApp() {
   const [activeTab, setActiveTab] = useState<TabKey>("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const [apiKey, setApiKey] = useState("");
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [autoReadAssistant, setAutoReadAssistant] = useState(true);
   const [transcript, setTranscript] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
@@ -150,7 +159,7 @@ export default function EnglishReviewApp() {
   const [conversations, setConversations] = useState<ConversationRecord[]>([]);
   const [extractionSourceType, setExtractionSourceType] = useState<"paste" | "chat">("paste");
   const [extractionSourceText, setExtractionSourceText] = useState("");
-  const [items, setItems] = useState<ReviewItem[]>(sampleReviewItems());
+  const [items, setItems] = useState<ReviewItem[]>([]);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [extraction, setExtraction] = useState<ExtractionResult | null>(null);
   const [practiceFeedback, setPracticeFeedback] = useState<PracticeFeedback | null>(null);
@@ -159,11 +168,12 @@ export default function EnglishReviewApp() {
     if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
       return "正在连接学习空间";
     }
-    return "演示模式";
+    return "学习空间未配置";
   });
   const [error, setError] = useState("");
 
   const hasSupabase = Boolean(supabase);
+  const isConfigured = hasSupabase;
   const chatConversations = useMemo(
     () => conversations.filter((conversation) => conversation.source_type === "chat"),
     [conversations],
@@ -196,7 +206,26 @@ export default function EnglishReviewApp() {
       if (cancelled || !sessionUserId) return;
 
       setUserId(sessionUserId);
-      setStatus("已连接");
+      setStatus("正在加载学习记录");
+
+      const { data: profileData, error: profileError } = await client
+        .from("profiles")
+        .select("*")
+        .eq("user_id", sessionUserId)
+        .maybeSingle();
+
+      if (profileError) {
+        setError(profileError.message);
+        setStatus("资料加载失败");
+        return;
+      }
+
+      if (!cancelled) {
+        const nextProfile = (profileData as UserProfile | null) ?? null;
+        setProfile(nextProfile);
+        setProfileOpen(!nextProfile);
+        setStatus(nextProfile ? "试用已开启" : "请设置昵称");
+      }
 
       const { data, error: loadError } = await client
         .from("review_items")
@@ -209,7 +238,7 @@ export default function EnglishReviewApp() {
         return;
       }
 
-      if (!cancelled && data && data.length > 0) {
+      if (!cancelled && data) {
         setItems((data as DatabaseReviewItem[]).map(toReviewItem));
       }
 
@@ -236,26 +265,68 @@ export default function EnglishReviewApp() {
     };
   }, [supabase]);
 
-  function saveApiKey(value: string) {
-    setApiKey(value);
-    localStorage.setItem("arkApiKey", value);
-  }
-
   function saveAutoRead(value: boolean) {
     setAutoReadAssistant(value);
     localStorage.setItem("autoReadAssistant", String(value));
   }
 
   function syncLocalSettings() {
-    const savedApiKey = localStorage.getItem("arkApiKey") || "";
     const savedAutoRead = localStorage.getItem("autoReadAssistant") !== "false";
-    setApiKey(savedApiKey);
     setAutoReadAssistant(savedAutoRead);
     return {
-      apiKey: savedApiKey,
       autoReadAssistant: savedAutoRead,
     };
   }
+
+  async function saveProfile(displayName: string) {
+    if (!supabase || !userId) {
+      throw new Error("学习空间还在连接，请稍后再试。");
+    }
+
+    const normalizedName = normalizeDisplayName(displayName);
+    const { data, error: profileError } = await supabase
+      .from("profiles")
+      .insert({
+        user_id: userId,
+        display_name: displayName.trim(),
+        display_name_normalized: normalizedName,
+      })
+      .select("*")
+      .single();
+
+    if (profileError) {
+      if (profileError.code === "23505") {
+        throw new Error(`这个昵称已经有人用了，可以试试：${suggestDisplayName(displayName)}`);
+      }
+      throw profileError;
+    }
+
+    setProfile(data as UserProfile);
+    setProfileOpen(false);
+    setStatus("试用已开启");
+  }
+
+  const getApiHeaders = useCallback(async () => {
+    if (!supabase || !userId) {
+      throw new Error("学习空间还在连接，请稍后再试。");
+    }
+
+    if (!profile) {
+      setProfileOpen(true);
+      throw new Error("请先设置昵称，系统会用它区分你的试用记录。");
+    }
+
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (sessionError || !token) {
+      throw new Error("登录状态已失效，请刷新页面后重试。");
+    }
+
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+  }, [profile, supabase, userId]);
 
   async function createConversation(title: string, sourceType: "paste" | "chat") {
     if (!supabase || !userId) return null;
@@ -361,14 +432,6 @@ export default function EnglishReviewApp() {
 
   async function runCoaching(text?: string) {
     const sourceText = (text ?? chatInput).trim();
-    const localSettings = syncLocalSettings();
-    const currentApiKey = localSettings.apiKey || apiKey;
-
-    if (!currentApiKey.trim()) {
-      setError("请先在设置里填写火山方舟 API key。");
-      setSettingsOpen(true);
-      return;
-    }
 
     if (!sourceText) {
       setError("先输入一句你想表达的中文、英文或中英混合内容。");
@@ -380,11 +443,11 @@ export default function EnglishReviewApp() {
     setCoaching(null);
 
     try {
+      const headers = await getApiHeaders();
       const response = await fetch("/api/ark/coach", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
-          apiKey: currentApiKey.trim(),
           model: MODEL,
           text: sourceText,
           scene: chatScene,
@@ -462,15 +525,6 @@ export default function EnglishReviewApp() {
         ? transcript.trim()
         : messages.map((message) => `${message.role}: ${message.content}`).join("\n\n");
 
-    const localSettings = syncLocalSettings();
-    const currentApiKey = localSettings.apiKey || apiKey;
-
-    if (!currentApiKey.trim()) {
-      setError("请先在设置里填写火山方舟 API key。");
-      setSettingsOpen(true);
-      return;
-    }
-
     if (!sourceText.trim()) {
       setError(source === "paste" ? "请先粘贴对话记录。" : "请先在对话页聊几句。");
       return;
@@ -480,11 +534,11 @@ export default function EnglishReviewApp() {
     setError("");
 
     try {
+      const headers = await getApiHeaders();
       const response = await fetch("/api/ark/extract", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
-          apiKey: currentApiKey.trim(),
           model: MODEL,
           transcript: sourceText,
         }),
@@ -587,11 +641,12 @@ export default function EnglishReviewApp() {
     if (!content) return;
 
     const localSettings = syncLocalSettings();
-    const currentApiKey = localSettings.apiKey || apiKey;
+    let headers: Record<string, string>;
 
-    if (!currentApiKey.trim()) {
-      setError("请先在设置里填写火山方舟 API key。");
-      setSettingsOpen(true);
+    try {
+      headers = await getApiHeaders();
+    } catch (headerError) {
+      setError(headerError instanceof Error ? headerError.message : "学习空间还在连接，请稍后再试。");
       return;
     }
 
@@ -614,9 +669,8 @@ export default function EnglishReviewApp() {
     try {
       const response = await fetch("/api/ark/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
-          apiKey: currentApiKey.trim(),
           model: MODEL,
           messages: nextMessages,
           scene: chatScene,
@@ -694,15 +748,6 @@ export default function EnglishReviewApp() {
   );
 
   async function evaluatePractice(item: ReviewItem, learnerAnswer: string) {
-    const localSettings = syncLocalSettings();
-    const currentApiKey = localSettings.apiKey || apiKey;
-
-    if (!currentApiKey.trim()) {
-      setError("请先在设置里填写火山方舟 API key。");
-      setSettingsOpen(true);
-      return;
-    }
-
     if (!learnerAnswer.trim()) {
       setError("请先写下你自己说出的英文，再让 AI 评估。");
       return;
@@ -713,11 +758,11 @@ export default function EnglishReviewApp() {
     setPracticeFeedback(null);
 
     try {
+      const headers = await getApiHeaders();
       const response = await fetch("/api/ark/practice-feedback", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
-          apiKey: currentApiKey.trim(),
           model: MODEL,
           promptCn: practicePrompt(item),
           referenceAnswer: item.answer_en,
@@ -743,9 +788,8 @@ export default function EnglishReviewApp() {
       <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-4 pb-[calc(6.5rem_+_env(safe-area-inset-bottom))] pt-[calc(1rem_+_env(safe-area-inset-top))] sm:px-6 lg:max-w-5xl">
         <AppHeader
           status={status}
-          hasApiKey={Boolean(apiKey.trim())}
           hasSupabase={hasSupabase}
-          userId={userId}
+          profile={profile}
           onOpenSettings={() => {
             syncLocalSettings();
             setSettingsOpen(true);
@@ -756,79 +800,81 @@ export default function EnglishReviewApp() {
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
         ) : null}
 
-        <section className="flex min-h-0 flex-1 pt-4">
-          {activeTab === "chat" ? (
-            <ConversationTab
-              messages={messages}
-              chatInput={chatInput}
-              scene={chatScene}
-              scenes={SCENES}
-              coaching={coaching}
-              onChatInputChange={setChatInput}
-              onSceneChange={changeScene}
-              onSendChat={sendChatMessage}
-              onRunCoaching={() => runCoaching()}
-              onUseCoaching={(value) => setChatInput(value)}
-              onAddCoaching={addCoachingToReview}
-              onExtractChat={() => runExtraction("chat")}
-              onSpeak={speech.speak}
-              onPrimeSpeech={speech.prime}
-              autoReadAssistant={autoReadAssistant}
-              conversations={chatConversations}
-              currentConversationId={chatConversationId}
-              onNewConversation={startNewConversation}
-              onLoadConversation={loadConversation}
-              busy={busy}
-            />
-          ) : null}
+        {!isConfigured ? <ConfigurationNotice /> : null}
 
-          {activeTab === "import" ? (
-            <RecordsTab
-              conversations={conversations}
-              onLoadConversation={loadConversation}
-              transcript={transcript}
-              onTranscriptChange={setTranscript}
-              onExtractPaste={() => runExtraction("paste")}
-              busy={busy}
-            />
-          ) : null}
+        {isConfigured ? (
+          <section className="flex min-h-0 flex-1 pt-4">
+            {activeTab === "chat" ? (
+              <ConversationTab
+                messages={messages}
+                chatInput={chatInput}
+                scene={chatScene}
+                scenes={SCENES}
+                coaching={coaching}
+                onChatInputChange={setChatInput}
+                onSceneChange={changeScene}
+                onSendChat={sendChatMessage}
+                onRunCoaching={() => runCoaching()}
+                onUseCoaching={(value) => setChatInput(value)}
+                onAddCoaching={addCoachingToReview}
+                onExtractChat={() => runExtraction("chat")}
+                onSpeak={speech.speak}
+                onPrimeSpeech={speech.prime}
+                autoReadAssistant={autoReadAssistant}
+                conversations={chatConversations}
+                currentConversationId={chatConversationId}
+                onNewConversation={startNewConversation}
+                onLoadConversation={loadConversation}
+                busy={busy}
+              />
+            ) : null}
 
-          {activeTab === "review" ? (
-            <ReviewTab
-              extraction={extraction}
-              busy={busy}
-              onConfirm={confirmExtraction}
-              items={items}
-              dueItems={dueItems}
-              selectedId={selectedItem?.id ?? null}
-              onSelect={(id) => {
-                setSelectedItemId(id);
-                setPracticeFeedback(null);
-                setActiveTab("practice");
-              }}
-            />
-          ) : null}
+            {activeTab === "import" ? (
+              <RecordsTab
+                conversations={conversations}
+                onLoadConversation={loadConversation}
+                transcript={transcript}
+                onTranscriptChange={setTranscript}
+                onExtractPaste={() => runExtraction("paste")}
+                busy={busy}
+              />
+            ) : null}
 
-          {activeTab === "practice" ? (
-            <PracticeTab
-              key={selectedItem?.id ?? "empty"}
-              item={selectedItem}
-              onRate={rateItem}
-              onEvaluate={evaluatePractice}
-              feedback={practiceFeedback}
-              busy={busy}
-              speech={speech}
-            />
-          ) : null}
-        </section>
+            {activeTab === "review" ? (
+              <ReviewTab
+                extraction={extraction}
+                busy={busy}
+                onConfirm={confirmExtraction}
+                items={items}
+                dueItems={dueItems}
+                selectedId={selectedItem?.id ?? null}
+                onSelect={(id) => {
+                  setSelectedItemId(id);
+                  setPracticeFeedback(null);
+                  setActiveTab("practice");
+                }}
+              />
+            ) : null}
+
+            {activeTab === "practice" ? (
+              <PracticeTab
+                key={selectedItem?.id ?? "empty"}
+                item={selectedItem}
+                onRate={rateItem}
+                onEvaluate={evaluatePractice}
+                feedback={practiceFeedback}
+                busy={busy}
+                speech={speech}
+              />
+            ) : null}
+          </section>
+        ) : null}
       </div>
 
       <BottomTabs activeTab={activeTab} onChange={setActiveTab} dueCount={dueItems.length} />
 
       {settingsOpen ? (
         <SettingsPanel
-          apiKey={apiKey}
-          onApiKeyChange={saveApiKey}
           autoReadAssistant={autoReadAssistant}
           onAutoReadChange={saveAutoRead}
           speech={speech}
@@ -837,21 +883,27 @@ export default function EnglishReviewApp() {
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}
+
+      {profileOpen && isConfigured ? (
+        <ProfileModal
+          currentName={profile?.display_name ?? ""}
+          onSave={saveProfile}
+          onClose={profile ? () => setProfileOpen(false) : undefined}
+        />
+      ) : null}
     </main>
   );
 }
 
 function AppHeader({
   status,
-  hasApiKey,
   hasSupabase,
-  userId,
+  profile,
   onOpenSettings,
 }: {
   status: string;
-  hasApiKey: boolean;
   hasSupabase: boolean;
-  userId: string | null;
+  profile: UserProfile | null;
   onOpenSettings: () => void;
 }) {
   return (
@@ -864,7 +916,7 @@ function AppHeader({
           <div>
             <h1 className="font-serif text-xl font-semibold leading-5">SpeakLoop</h1>
             <p className="text-xs text-[#746f68]">
-              {hasApiKey ? "Ark 已就绪" : "待设置 Key"} · {hasSupabase ? userId?.slice(0, 8) || "连接中" : status}
+              {hasSupabase ? "试用已开启" : "学习空间未配置"} · {profile?.display_name || status}
             </p>
           </div>
         </div>
@@ -1560,9 +1612,106 @@ function BottomTabs({
   );
 }
 
+function ConfigurationNotice() {
+  return (
+    <section className="mt-4 rounded-lg border border-[#d6ccbf] bg-white p-5 text-sm leading-6 text-[#746f68] shadow-sm">
+      <h2 className="text-lg font-semibold text-[#191715]">学习空间还没有配置</h2>
+      <p className="mt-2">
+        试用版需要连接 Supabase，才能隔离每个用户的聊天记录和复习内容。请在本地或 Vercel 配置
+        {" "}
+        <code className="rounded bg-[#f7f4ed] px-1 py-0.5">NEXT_PUBLIC_SUPABASE_URL</code>
+        {" "}和{" "}
+        <code className="rounded bg-[#f7f4ed] px-1 py-0.5">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>。
+      </p>
+    </section>
+  );
+}
+
+function ProfileModal({
+  currentName,
+  onSave,
+  onClose,
+}: {
+  currentName: string;
+  onSave: (displayName: string) => Promise<void>;
+  onClose?: () => void;
+}) {
+  const [displayName, setDisplayName] = useState(currentName);
+  const [saving, setSaving] = useState(false);
+  const [localError, setLocalError] = useState("");
+
+  async function submit() {
+    const trimmed = displayName.trim();
+    if (trimmed.length < 2) {
+      setLocalError("昵称至少 2 个字符。");
+      return;
+    }
+
+    setSaving(true);
+    setLocalError("");
+
+    try {
+      await onSave(trimmed);
+    } catch (saveError) {
+      setLocalError(saveError instanceof Error ? saveError.message : "昵称保存失败，请换一个再试。");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-[#191715]/35 px-4 py-[calc(1.25rem_+_env(safe-area-inset-top))] backdrop-blur-sm" role="dialog" aria-modal="true">
+      <section className="mx-auto max-w-md rounded-lg border border-[#ddd5c8] bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold">设置试用昵称</h2>
+            <p className="mt-1 text-sm leading-6 text-[#746f68]">
+              昵称只用来区分试用记录，真正的数据隔离由 Supabase 匿名账号完成。
+            </p>
+          </div>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#ddd5c8] bg-[#fffdf8]"
+              aria-label="关闭昵称设置"
+            >
+              <X size={17} />
+            </button>
+          ) : null}
+        </div>
+
+        <label className="grid gap-2 text-sm font-semibold" htmlFor="display-name">
+          你的昵称
+          <input
+            id="display-name"
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") submit();
+            }}
+            placeholder="例如：洛凯"
+            className="h-11 rounded-md border border-[#ddd5c8] bg-[#fffdf8] px-3 text-base outline-none focus:border-[#5d6b57] focus:ring-2 focus:ring-[#5d6b57]/15 sm:text-sm"
+          />
+        </label>
+
+        {localError ? <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{localError}</p> : null}
+
+        <button
+          type="button"
+          onClick={submit}
+          disabled={saving}
+          className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#191715] px-4 text-sm font-semibold text-white disabled:opacity-60"
+        >
+          {saving ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}
+          开始试用
+        </button>
+      </section>
+    </div>
+  );
+}
+
 function SettingsPanel({
-  apiKey,
-  onApiKeyChange,
   autoReadAssistant,
   onAutoReadChange,
   speech,
@@ -1570,8 +1719,6 @@ function SettingsPanel({
   status,
   onClose,
 }: {
-  apiKey: string;
-  onApiKeyChange: (value: string) => void;
   autoReadAssistant: boolean;
   onAutoReadChange: (value: boolean) => void;
   speech: SpeechState;
@@ -1585,7 +1732,7 @@ function SettingsPanel({
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold">设置</h2>
-            <p className="mt-1 text-sm text-[#746f68]">Key 只保存在本地浏览器。</p>
+            <p className="mt-1 text-sm text-[#746f68]">试用版由服务端统一连接模型。</p>
           </div>
           <button
             type="button"
@@ -1598,21 +1745,6 @@ function SettingsPanel({
         </div>
 
         <div className="grid gap-4">
-          <label className="grid gap-2 text-sm font-semibold" htmlFor="api-key">
-            <span className="flex items-center gap-2">
-              <KeyRound size={16} />
-              火山方舟 API key
-            </span>
-            <input
-              id="api-key"
-              value={apiKey}
-              onChange={(event) => onApiKeyChange(event.target.value)}
-              type="password"
-              placeholder="ark-..."
-              className="h-11 rounded-md border border-[#ddd5c8] bg-[#fffdf8] px-3 text-base outline-none focus:border-[#5d6b57] focus:ring-2 focus:ring-[#5d6b57]/15 sm:text-sm"
-            />
-          </label>
-
           <label className="flex items-center justify-between gap-3 rounded-lg border border-[#ddd5c8] bg-[#fffdf8] px-3 py-3 text-sm">
             <span>
               <span className="block font-semibold">AI 回复自动朗读</span>

@@ -1,26 +1,31 @@
 import { NextResponse } from "next/server";
-import { callArkResponses, chatMessagesToArkInput, extractOutputText } from "@/lib/ark";
+import { callArkResponses, chatMessagesToArkInput, extractOutputText, modelName } from "@/lib/ark";
+import { getArkApiKey, getAuthenticatedUserFromRequest, jsonError, recordAiUsage } from "@/lib/ark-server";
 import type { ChatMessage } from "@/lib/types";
 
 export async function POST(request: Request) {
+  let auth: Awaited<ReturnType<typeof getAuthenticatedUserFromRequest>> | null = null;
+  let usageModel: string | undefined;
+  let inputChars = 0;
+
   try {
+    auth = await getAuthenticatedUserFromRequest(request);
+    const apiKey = getArkApiKey();
     const body = (await request.json()) as {
-      apiKey?: string;
       model?: string;
       messages?: ChatMessage[];
       scene?: string;
     };
-
-    if (!body.apiKey?.trim()) {
-      return NextResponse.json({ error: "Missing Ark API key." }, { status: 400 });
-    }
+    usageModel = body.model;
 
     if (!Array.isArray(body.messages) || body.messages.length === 0) {
       return NextResponse.json({ error: "Missing messages." }, { status: 400 });
     }
 
+    inputChars = body.messages.reduce((total, message) => total + message.content.length, 0);
+
     const payload = await callArkResponses({
-      apiKey: body.apiKey.trim(),
+      apiKey,
       model: body.model,
       input: [
         {
@@ -50,11 +55,23 @@ export async function POST(request: Request) {
 
     const text = extractOutputText(payload);
 
+    await recordAiUsage(auth, {
+      route: "chat",
+      model: usageModel,
+      inputChars,
+      outputChars: text.length,
+      status: "success",
+    });
+
     return NextResponse.json({ text });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown Ark chat error." },
-      { status: 500 },
-    );
+    await recordAiUsage(auth, {
+      route: "chat",
+      model: modelName(usageModel),
+      inputChars,
+      status: "error",
+      errorMessage: error instanceof Error ? error.message : "Unknown Ark chat error.",
+    });
+    return jsonError(error, "Unknown Ark chat error.");
   }
 }

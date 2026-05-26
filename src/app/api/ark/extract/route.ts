@@ -1,24 +1,28 @@
 import { NextResponse } from "next/server";
 import { callArkResponses, extractOutputText, extractionPrompt, parseExtractionJson } from "@/lib/ark";
+import { getArkApiKey, getAuthenticatedUserFromRequest, jsonError, recordAiUsage } from "@/lib/ark-server";
 
 const MAX_TRANSCRIPT_CHARS = 24000;
 
 export async function POST(request: Request) {
+  let auth: Awaited<ReturnType<typeof getAuthenticatedUserFromRequest>> | null = null;
+  let usageModel: string | undefined;
+  let inputChars = 0;
+
   try {
+    auth = await getAuthenticatedUserFromRequest(request);
+    const apiKey = getArkApiKey();
     const body = (await request.json()) as {
-      apiKey?: string;
       model?: string;
       transcript?: string;
     };
-
-    if (!body.apiKey?.trim()) {
-      return NextResponse.json({ error: "Missing Ark API key." }, { status: 400 });
-    }
+    usageModel = body.model;
 
     const transcript = body.transcript?.trim();
     if (!transcript) {
       return NextResponse.json({ error: "Missing transcript." }, { status: 400 });
     }
+    inputChars = transcript.length;
 
     if (transcript.length > MAX_TRANSCRIPT_CHARS) {
       return NextResponse.json(
@@ -28,7 +32,7 @@ export async function POST(request: Request) {
     }
 
     const payload = await callArkResponses({
-      apiKey: body.apiKey.trim(),
+      apiKey,
       model: body.model,
       input: extractionPrompt(transcript),
     });
@@ -36,11 +40,23 @@ export async function POST(request: Request) {
     const text = extractOutputText(payload);
     const result = parseExtractionJson(text);
 
+    await recordAiUsage(auth, {
+      route: "extract",
+      model: usageModel,
+      inputChars,
+      outputChars: text.length,
+      status: "success",
+    });
+
     return NextResponse.json({ result, rawText: text });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown extraction error." },
-      { status: 500 },
-    );
+    await recordAiUsage(auth, {
+      route: "extract",
+      model: usageModel,
+      inputChars,
+      status: "error",
+      errorMessage: error instanceof Error ? error.message : "Unknown extraction error.",
+    });
+    return jsonError(error, "Unknown extraction error.");
   }
 }
