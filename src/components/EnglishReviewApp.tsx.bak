@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { auth, db, callFunction, signInAnonymously, getCurrentUserId } from "@/lib/cloudbase";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
 import {
   isDue,
   makeId,
@@ -142,6 +142,7 @@ function toReviewItem(row: DatabaseReviewItem): ReviewItem {
 }
 
 export default function EnglishReviewApp() {
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const speech = useSpeech();
   const [activeTab, setActiveTab] = useState<TabKey>("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -163,10 +164,19 @@ export default function EnglishReviewApp() {
   const [extraction, setExtraction] = useState<ExtractionResult | null>(null);
   const [practiceFeedback, setPracticeFeedback] = useState<PracticeFeedback | null>(null);
   const [busy, setBusy] = useState<BusyState>(null);
-  const [status, setStatus] = useState("正在连接学习空间");
+  const [status, setStatus] = useState(() => {
+    if (
+      process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+    ) {
+      return "正在连接学习空间";
+    }
+    return "学习空间未配置";
+  });
   const [error, setError] = useState("");
 
-  const isConfigured = true;
+  const hasSupabase = Boolean(supabase);
+  const isConfigured = hasSupabase;
   const chatConversations = useMemo(
     () => conversations.filter((conversation) => conversation.source_type === "chat"),
     [conversations],
