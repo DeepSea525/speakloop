@@ -1,0 +1,9 @@
+{
+  "name": "practice-feedback",
+  "version": "1.0.0",
+  "description": "Practice feedback for English learning",
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/node-sdk": "latest"
+  }
+}

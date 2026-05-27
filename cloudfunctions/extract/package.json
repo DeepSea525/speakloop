@@ -1,0 +1,9 @@
+{
+  "name": "extract",
+  "version": "1.0.0",
+  "description": "Extract learning points from English conversation",
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/node-sdk": "latest"
+  }
+}

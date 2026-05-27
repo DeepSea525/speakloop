@@ -1,0 +1,9 @@
+{
+  "name": "coach",
+  "version": "1.0.0",
+  "description": "Coaching for English expression",
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/node-sdk": "latest"
+  }
+}
