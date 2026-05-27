@@ -764,3 +764,214 @@
   "eventCode": "toolkit_lifecycle",
   "deviceId": "c4d3a3ae..."
 }
+[2026-05-27T15:04:49.818+00:00] [DEBUG] [cache] Using default TTL {
+  "ttlMs": 86400000
+}
+[2026-05-27T15:04:49.850+00:00] [DEBUG] report_init {
+  "enabled": true,
+  "deviceId": "c4d3a3ae...",
+  "ide": "none"
+}
+[2026-05-27T15:04:49.873+00:00] [DEBUG] [cache] evaluated cache meta {
+  "ageMs": 82645437,
+  "ttlMs": 86400000,
+  "valid": true
+}
+[2026-05-27T15:04:49.874+00:00] [DEBUG] [downloadResources] 使用缓存（快速路径）
+[2026-05-27T15:04:49.888+00:00] [INFO] TencentCloudBase MCP Server running on stdio
+[2026-05-27T15:04:49.889+00:00] [DEBUG] [telemetry] 生命周期事件 envId 获取结果 {
+  "event": "start",
+  "envId": "speakloop-d0gycd2krc8b125e9",
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID",
+  "hasCloudBaseOptions": false,
+  "cloudBaseOptionsEnvId": null
+}
+[2026-05-27T15:04:49.889+00:00] [DEBUG] [telemetry] 生命周期事件上报参数 {
+  "event": "start",
+  "eventData": {
+    "event": "start",
+    "envId": "speakloop-d0gycd2krc8b125e9",
+    "nodeVersion": "v22.22.2",
+    "osType": "Linux",
+    "osRelease": "5.4.119-19-0009-03_2.0.1-00029-gee3a514c359c",
+    "arch": "x64",
+    "mcpVersion": "2.14.2"
+  },
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID"
+}
+[2026-05-27T15:04:49.970+00:00] [DEBUG] report_success {
+  "eventCode": "toolkit_lifecycle",
+  "deviceId": "c4d3a3ae..."
+}
+[2026-05-27T15:04:51.389+00:00] [DEBUG] [cache] Using default TTL {
+  "ttlMs": 86400000
+}
+[2026-05-27T15:04:51.421+00:00] [DEBUG] report_init {
+  "enabled": true,
+  "deviceId": "c4d3a3ae...",
+  "ide": "none"
+}
+[2026-05-27T15:04:51.451+00:00] [DEBUG] [cache] evaluated cache meta {
+  "ageMs": 82647015,
+  "ttlMs": 86400000,
+  "valid": true
+}
+[2026-05-27T15:04:51.452+00:00] [DEBUG] [downloadResources] 使用缓存（快速路径）
+[2026-05-27T15:04:51.466+00:00] [INFO] TencentCloudBase MCP Server running on stdio
+[2026-05-27T15:04:51.467+00:00] [DEBUG] [telemetry] 生命周期事件 envId 获取结果 {
+  "event": "start",
+  "envId": "speakloop-d0gycd2krc8b125e9",
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID",
+  "hasCloudBaseOptions": false,
+  "cloudBaseOptionsEnvId": null
+}
+[2026-05-27T15:04:51.467+00:00] [DEBUG] [telemetry] 生命周期事件上报参数 {
+  "event": "start",
+  "eventData": {
+    "event": "start",
+    "envId": "speakloop-d0gycd2krc8b125e9",
+    "nodeVersion": "v22.22.2",
+    "osType": "Linux",
+    "osRelease": "5.4.119-19-0009-03_2.0.1-00029-gee3a514c359c",
+    "arch": "x64",
+    "mcpVersion": "2.14.2"
+  },
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID"
+}
+[2026-05-27T15:04:51.494+00:00] [DEBUG] 开始执行工具: updateFunctionConfig {
+  "args": {
+    "funcParam": {
+      "name": "extract",
+      "timeout": 30,
+      "envVariables": {}
+    }
+  }
+}
+[2026-05-27T15:04:51.495+00:00] [DEBUG] loginByApiSecret
+[2026-05-27T15:04:51.496+00:00] [DEBUG] 使用 envManager 缓存的环境ID: {
+  "cachedEnvId": "speakloop-d0gycd2krc8b125e9"
+}
+[2026-05-27T15:04:51.547+00:00] [DEBUG] report_success {
+  "eventCode": "toolkit_lifecycle",
+  "deviceId": "c4d3a3ae..."
+}
+[2026-05-27T15:04:52.080+00:00] [DEBUG] 工具执行失败: updateFunctionConfig {
+  "error": "Cannot read properties of null (reading 'reduce')",
+  "duration": 586
+}
+[2026-05-27T15:04:52.081+00:00] [DEBUG] 使用缓存中的 envId: {
+  "envId": "speakloop-d0gycd2krc8b125e9"
+}
+[2026-05-27T15:04:52.083+00:00] [DEBUG] [telemetry] 工具调用 envId 获取结果 {
+  "toolName": "updateFunctionConfig",
+  "envId": "speakloop-d0gycd2krc8b125e9",
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID",
+  "hasCloudBaseOptions": false,
+  "cloudBaseOptionsEnvId": null
+}
+[2026-05-27T15:04:52.083+00:00] [DEBUG] [telemetry] 工具调用上报参数 {
+  "toolName": "updateFunctionConfig",
+  "eventData": {
+    "toolName": "updateFunctionConfig",
+    "success": "false",
+    "duration": 588,
+    "error": "Cannot read properties of null (reading 'reduce')",
+    "envId": "speakloop-d0gycd2krc8b125e9",
+    "nodeVersion": "v22.22.2",
+    "osType": "Linux",
+    "osRelease": "5.4.119-19-0009-03_2.0.1-00029-gee3a514c359c",
+    "arch": "x64",
+    "mcpVersion": "2.14.2",
+    "inputParams": "[已包含]"
+  },
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID"
+}
+[2026-05-27T15:04:52.099+00:00] [DEBUG] report_success {
+  "eventCode": "toolkit_tool_call",
+  "deviceId": "c4d3a3ae..."
+}
+[2026-05-27T15:04:52.795+00:00] [DEBUG] [telemetry] 生命周期事件 envId 获取结果 {
+  "event": "exit",
+  "envId": "speakloop-d0gycd2krc8b125e9",
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID",
+  "hasCloudBaseOptions": false,
+  "cloudBaseOptionsEnvId": null
+}
+[2026-05-27T15:05:14.564+00:00] [DEBUG] [cache] Using default TTL {
+  "ttlMs": 86400000
+}
+[2026-05-27T15:05:14.597+00:00] [DEBUG] report_init {
+  "enabled": true,
+  "deviceId": "c4d3a3ae...",
+  "ide": "none"
+}
+[2026-05-27T15:05:14.621+00:00] [DEBUG] [cache] evaluated cache meta {
+  "ageMs": 82670184,
+  "ttlMs": 86400000,
+  "valid": true
+}
+[2026-05-27T15:05:14.622+00:00] [DEBUG] [downloadResources] 使用缓存（快速路径）
+[2026-05-27T15:05:14.633+00:00] [INFO] TencentCloudBase MCP Server running on stdio
+[2026-05-27T15:05:14.634+00:00] [DEBUG] [telemetry] 生命周期事件 envId 获取结果 {
+  "event": "start",
+  "envId": "speakloop-d0gycd2krc8b125e9",
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID",
+  "hasCloudBaseOptions": false,
+  "cloudBaseOptionsEnvId": null
+}
+[2026-05-27T15:05:14.634+00:00] [DEBUG] [telemetry] 生命周期事件上报参数 {
+  "event": "start",
+  "eventData": {
+    "event": "start",
+    "envId": "speakloop-d0gycd2krc8b125e9",
+    "nodeVersion": "v22.22.2",
+    "osType": "Linux",
+    "osRelease": "5.4.119-19-0009-03_2.0.1-00029-gee3a514c359c",
+    "arch": "x64",
+    "mcpVersion": "2.14.2"
+  },
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID"
+}
+[2026-05-27T15:05:14.661+00:00] [DEBUG] 开始执行工具: getFunctionList {
+  "args": {
+    "action": "list"
+  }
+}
+[2026-05-27T15:05:14.661+00:00] [DEBUG] loginByApiSecret
+[2026-05-27T15:05:14.662+00:00] [DEBUG] 使用 envManager 缓存的环境ID: {
+  "cachedEnvId": "speakloop-d0gycd2krc8b125e9"
+}
+[2026-05-27T15:05:14.710+00:00] [DEBUG] report_success {
+  "eventCode": "toolkit_lifecycle",
+  "deviceId": "c4d3a3ae..."
+}
+[2026-05-27T15:05:15.015+00:00] [DEBUG] 工具执行成功: getFunctionList {
+  "duration": 354
+}
+[2026-05-27T15:05:15.016+00:00] [DEBUG] [telemetry] 工具调用 envId 获取结果 {
+  "toolName": "getFunctionList",
+  "envId": "speakloop-d0gycd2krc8b125e9",
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID",
+  "hasCloudBaseOptions": false,
+  "cloudBaseOptionsEnvId": null
+}
+[2026-05-27T15:05:15.016+00:00] [DEBUG] [telemetry] 工具调用上报参数 {
+  "toolName": "getFunctionList",
+  "eventData": {
+    "toolName": "getFunctionList",
+    "success": "true",
+    "duration": 355,
+    "envId": "speakloop-d0gycd2krc8b125e9",
+    "nodeVersion": "v22.22.2",
+    "osType": "Linux",
+    "osRelease": "5.4.119-19-0009-03_2.0.1-00029-gee3a514c359c",
+    "arch": "x64",
+    "mcpVersion": "2.14.2",
+    "inputParams": "[已包含]"
+  },
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID"
+}
+[2026-05-27T15:05:15.039+00:00] [DEBUG] report_success {
+  "eventCode": "toolkit_tool_call",
+  "deviceId": "c4d3a3ae..."
+}
