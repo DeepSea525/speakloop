@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { auth, db, callFunction, signInAnonymously, getCurrentUserId } from "@/lib/cloudbase";
+import { extractLearningPoints, chatWithAI, getPracticeFeedback, getCoaching } from "@/lib/api";
 import {
   isDue,
   makeId,
@@ -177,77 +178,53 @@ export default function EnglishReviewApp() {
   }, [dueItems, items, selectedItemId]);
 
   useEffect(() => {
-    if (!supabase) return;
-
-    const client = supabase;
     let cancelled = false;
 
     async function init() {
-      const { data: sessionData } = await client.auth.getSession();
-      let sessionUserId = sessionData.session?.user.id ?? null;
+      try {
+        // 匿名登录
+        await signInAnonymously();
+        const currentUserId = await getCurrentUserId();
+        
+        if (cancelled || !currentUserId) return;
 
-      if (!sessionUserId) {
-        const { data, error: signInError } = await client.auth.signInAnonymously();
-        if (signInError) {
-          setError(signInError.message);
-          setStatus("匿名登录失败");
-          return;
+        setUserId(currentUserId);
+        setStatus("正在加载学习记录");
+
+        // 加载用户资料
+        const profileRes = await db.collection("profiles").where({ user_id: currentUserId }).get();
+        const profileData = profileRes.data[0] as UserProfile | undefined;
+
+        if (!cancelled) {
+          setProfile(profileData || null);
+          setProfileOpen(!profileData);
+          setStatus(profileData ? "试用已开启" : "请设置昵称");
         }
-        sessionUserId = data.user?.id ?? null;
-      }
 
-      if (cancelled || !sessionUserId) return;
+        // 加载复习项目
+        const itemsRes = await db.collection("review_items")
+          .where({ user_id: currentUserId })
+          .orderBy("due_at", "asc")
+          .limit(200)
+          .get();
+        
+        if (!cancelled && itemsRes.data) {
+          setItems(itemsRes.data.map(toReviewItem));
+        }
 
-      setUserId(sessionUserId);
-      setStatus("正在加载学习记录");
-
-      const { data: profileData, error: profileError } = await client
-        .from("profiles")
-        .select("*")
-        .eq("user_id", sessionUserId)
-        .maybeSingle();
-
-      if (profileError) {
-        setError(profileError.message);
-        setStatus("资料加载失败");
-        return;
-      }
-
-      if (!cancelled) {
-        const nextProfile = (profileData as UserProfile | null) ?? null;
-        setProfile(nextProfile);
-        setProfileOpen(!nextProfile);
-        setStatus(nextProfile ? "试用已开启" : "请设置昵称");
-      }
-
-      const { data, error: loadError } = await client
-        .from("review_items")
-        .select("*")
-        .order("due_at", { ascending: true })
-        .limit(200);
-
-      if (loadError) {
-        setError(loadError.message);
-        return;
-      }
-
-      if (!cancelled && data) {
-        setItems((data as DatabaseReviewItem[]).map(toReviewItem));
-      }
-
-      const { data: conversationData, error: conversationError } = await client
-        .from("conversations")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(20);
-
-      if (conversationError) {
-        setError(conversationError.message);
-        return;
-      }
-
-      if (!cancelled && conversationData) {
-        setConversations(conversationData as ConversationRecord[]);
+        // 加载对话记录
+        const convRes = await db.collection("conversations")
+          .where({ user_id: currentUserId })
+          .orderBy("created_at", "desc")
+          .limit(20)
+          .get();
+        
+        if (!cancelled && convRes.data) {
+          setConversations(convRes.data as ConversationRecord[]);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "初始化失败");
+        setStatus("连接失败");
       }
     }
 
@@ -256,7 +233,7 @@ export default function EnglishReviewApp() {
     return () => {
       cancelled = true;
     };
-  }, [supabase]);
+  }, []);
 
   function saveAutoRead(value: boolean) {
     setAutoReadAssistant(value);
@@ -299,8 +276,8 @@ export default function EnglishReviewApp() {
     setStatus("试用已开启");
   }
 
-  const getApiHeaders = useCallback(async () => {
-    if (!supabase || !userId) {
+  const checkAuth = useCallback(async () => {
+    if (!userId) {
       throw new Error("学习空间还在连接，请稍后再试。");
     }
 
@@ -308,66 +285,47 @@ export default function EnglishReviewApp() {
       setProfileOpen(true);
       throw new Error("请先设置昵称，系统会用它区分你的试用记录。");
     }
-
-    const { data, error: sessionError } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (sessionError || !token) {
-      throw new Error("登录状态已失效，请刷新页面后重试。");
-    }
-
-    return {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    };
-  }, [profile, supabase, userId]);
+  }, [profile, userId]);
 
   async function createConversation(title: string, sourceType: "paste" | "chat") {
-    if (!supabase || !userId) return null;
+    if (!userId) return null;
 
-    const { data, error: insertError } = await supabase
-      .from("conversations")
-      .insert({
-        user_id: userId,
-        title,
-        source_type: sourceType,
-      })
-      .select()
-      .single();
+    const res = await db.collection("conversations").add({
+      user_id: userId,
+      title,
+      source_type: sourceType,
+      created_at: new Date(),
+    });
 
-    if (insertError) throw insertError;
-    return (data as ConversationRecord).id;
+    return res.id;
   }
 
   async function refreshConversations() {
-    if (!supabase || !userId) return;
+    if (!userId) return;
 
-    const { data, error: loadError } = await supabase
-      .from("conversations")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(20);
+    const res = await db.collection("conversations")
+      .where({ user_id: userId })
+      .orderBy("created_at", "desc")
+      .limit(20)
+      .get();
 
-    if (loadError) throw loadError;
-    setConversations((data ?? []) as ConversationRecord[]);
+    setConversations(res.data as ConversationRecord[]);
   }
 
   async function loadConversation(conversationId: string) {
-    if (!supabase || !userId) return;
+    if (!userId) return;
 
     setBusy("history");
     setError("");
 
     try {
       const conversation = conversations.find((candidate) => candidate.id === conversationId) ?? null;
-      const { data, error: loadError } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true });
+      const res = await db.collection("messages")
+        .where({ conversation_id: conversationId })
+        .orderBy("created_at", "asc")
+        .get();
 
-      if (loadError) throw loadError;
-
-      const loadedMessages = ((data ?? []) as DatabaseMessage[]).map((message) => ({
+      const loadedMessages = (res.data as DatabaseMessage[]).map((message) => ({
         id: message.id,
         role: message.role,
         content: message.content,
@@ -419,8 +377,10 @@ export default function EnglishReviewApp() {
       created_at: message.createdAt,
     }));
 
-    const { error: insertError } = await supabase.from("messages").insert(rows);
-    if (insertError) throw insertError;
+    // 使用云开发数据库保存消息
+    for (const row of rows) {
+      await db.collection("messages").add(row);
+    }
   }
 
   async function runCoaching(text?: string) {
@@ -436,24 +396,9 @@ export default function EnglishReviewApp() {
     setCoaching(null);
 
     try {
-      const headers = await getApiHeaders();
-      const response = await fetch("/api/ark/coach", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model: MODEL,
-          text: sourceText,
-          scene: chatScene,
-        }),
-      });
-
-      const payload = (await response.json()) as { result?: CoachingResult; error?: string };
-      if (!response.ok || !payload.result) {
-        throw new Error(payload.error || "表达求助失败。");
-      }
-
-      setCoaching(payload.result);
-      speech.speak(payload.result.practice_line || payload.result.recommended_en);
+      const { result } = await getCoaching(sourceText, chatScene);
+      setCoaching(result);
+      speech.speak(result.practice_line || result.recommended_en);
     } catch (coachError) {
       setError(coachError instanceof Error ? coachError.message : "表达求助失败。");
     } finally {
@@ -479,29 +424,21 @@ export default function EnglishReviewApp() {
       due_at: nowIso(),
     };
 
-    if (supabase && userId) {
-      const { data, error: insertError } = await supabase
-        .from("review_items")
-        .insert({
-          user_id: userId,
-          conversation_id: chatConversationId,
-          kind: item.kind,
-          prompt_cn: item.prompt_cn,
-          answer_en: item.answer_en,
-          explanation: item.explanation,
-          tags: item.tags,
-          difficulty: item.difficulty,
-          due_at: item.due_at,
-        })
-        .select("*")
-        .single();
+    if (userId) {
+      const res = await db.collection("review_items").add({
+        user_id: userId,
+        conversation_id: chatConversationId,
+        kind: item.kind,
+        prompt_cn: item.prompt_cn,
+        answer_en: item.answer_en,
+        explanation: item.explanation,
+        tags: item.tags,
+        difficulty: item.difficulty,
+        due_at: item.due_at,
+        created_at: new Date(),
+      });
 
-      if (insertError) {
-        setError(insertError.message);
-        return;
-      }
-
-      const savedItem = toReviewItem(data as DatabaseReviewItem);
+      const savedItem = { ...item, id: res.id };
       setItems((current) => [savedItem, ...current]);
       setSelectedItemId(savedItem.id);
     } else {
@@ -527,22 +464,8 @@ export default function EnglishReviewApp() {
     setError("");
 
     try {
-      const headers = await getApiHeaders();
-      const response = await fetch("/api/ark/extract", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model: MODEL,
-          transcript: sourceText,
-        }),
-      });
-
-      const payload = (await response.json()) as { result?: ExtractionResult; error?: string };
-      if (!response.ok || !payload.result) {
-        throw new Error(payload.error || "AI 整理失败。");
-      }
-
-      setExtraction(payload.result);
+      const { result } = await extractLearningPoints(sourceText);
+      setExtraction(result);
       setExtractionSourceType(source);
       setExtractionSourceText(sourceText);
       setStatus("学习点待确认");
@@ -579,38 +502,35 @@ export default function EnglishReviewApp() {
           ]);
         }
 
-        await supabase.from("extraction_runs").insert({
+        await db.collection("extraction_runs").add({
           user_id: userId,
           conversation_id: conversationId,
           model: MODEL,
           input_summary: extractionSourceText.slice(0, 800),
           status: "success",
+          created_at: new Date(),
         });
       }
 
       const nextItems = reviewItemsFromExtraction(extraction, conversationId ?? undefined);
 
-      if (supabase && userId) {
-        const rows = nextItems.map((item) => ({
-          user_id: userId,
-          conversation_id: conversationId,
-          kind: item.kind,
-          prompt_cn: item.prompt_cn,
-          answer_en: item.answer_en,
-          explanation: item.explanation,
-          tags: item.tags,
-          difficulty: item.difficulty,
-          due_at: item.due_at,
-        }));
-
-        const { data, error: insertError } = await supabase
-          .from("review_items")
-          .insert(rows)
-          .select("*");
-
-        if (insertError) throw insertError;
-
-        const savedItems = ((data ?? []) as DatabaseReviewItem[]).map(toReviewItem);
+      if (userId) {
+        const savedItems: ReviewItem[] = [];
+        for (const item of nextItems) {
+          const res = await db.collection("review_items").add({
+            user_id: userId,
+            conversation_id: conversationId,
+            kind: item.kind,
+            prompt_cn: item.prompt_cn,
+            answer_en: item.answer_en,
+            explanation: item.explanation,
+            tags: item.tags,
+            difficulty: item.difficulty,
+            due_at: item.due_at,
+            created_at: new Date(),
+          });
+          savedItems.push({ ...item, id: res.id });
+        }
         setItems((current) => [...savedItems, ...current]);
         setSelectedItemId(savedItems[0]?.id ?? selectedItemId);
       } else {
@@ -634,12 +554,11 @@ export default function EnglishReviewApp() {
     if (!content) return;
 
     const localSettings = syncLocalSettings();
-    let headers: Record<string, string>;
 
     try {
-      headers = await getApiHeaders();
-    } catch (headerError) {
-      setError(headerError instanceof Error ? headerError.message : "学习空间还在连接，请稍后再试。");
+      await checkAuth();
+    } catch (authError) {
+      setError(authError instanceof Error ? authError.message : "学习空间还在连接，请稍后再试。");
       return;
     }
 
@@ -660,25 +579,12 @@ export default function EnglishReviewApp() {
     }
 
     try {
-      const response = await fetch("/api/ark/chat", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model: MODEL,
-          messages: nextMessages,
-          scene: chatScene,
-        }),
-      });
-
-      const payload = (await response.json()) as { text?: string; error?: string };
-      if (!response.ok || !payload.text) {
-        throw new Error(payload.error || "AI 对话失败。");
-      }
-
+      const aiText = await chatWithAI(nextMessages, chatScene);
+      
       const assistantMessage: ChatMessage = {
         id: makeId("msg"),
         role: "assistant",
-        content: payload.text,
+        content: aiText,
         createdAt: nowIso(),
       };
 
@@ -722,18 +628,20 @@ export default function EnglishReviewApp() {
       setSelectedItemId(nextItem?.id ?? null);
       setPracticeFeedback(null);
 
-      if (supabase && userId && !item.id.startsWith("seed_")) {
-        await supabase
-          .from("review_items")
-          .update({ due_at: dueAt, mastered_at: masteredAt, difficulty })
-          .eq("id", item.id);
+      if (userId && !item.id.startsWith("seed_")) {
+        await db.collection("review_items").doc(item.id).update({
+          due_at: dueAt,
+          mastered_at: masteredAt,
+          difficulty,
+        });
 
-        await supabase.from("review_events").insert({
+        await db.collection("review_events").add({
           user_id: userId,
           review_item_id: item.id,
           rating,
           correct: rating !== "hard",
           duration_ms: null,
+          created_at: new Date(),
         });
       }
     },
@@ -751,24 +659,8 @@ export default function EnglishReviewApp() {
     setPracticeFeedback(null);
 
     try {
-      const headers = await getApiHeaders();
-      const response = await fetch("/api/ark/practice-feedback", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model: MODEL,
-          promptCn: practicePrompt(item),
-          referenceAnswer: item.answer_en,
-          learnerAnswer,
-        }),
-      });
-
-      const payload = (await response.json()) as { result?: PracticeFeedback; error?: string };
-      if (!response.ok || !payload.result) {
-        throw new Error(payload.error || "AI 评估失败。");
-      }
-
-      setPracticeFeedback(payload.result);
+      const { result } = await getPracticeFeedback(practicePrompt(item), item.answer_en, learnerAnswer);
+      setPracticeFeedback(result);
     } catch (feedbackError) {
       setError(feedbackError instanceof Error ? feedbackError.message : "AI 评估失败。");
     } finally {
@@ -781,7 +673,7 @@ export default function EnglishReviewApp() {
       <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-4 pb-[calc(6.5rem_+_env(safe-area-inset-bottom))] pt-[calc(1rem_+_env(safe-area-inset-top))] sm:px-6 lg:max-w-5xl">
         <AppHeader
           status={status}
-          hasSupabase={hasSupabase}
+
           profile={profile}
           onOpenSettings={() => {
             syncLocalSettings();
@@ -793,9 +685,7 @@ export default function EnglishReviewApp() {
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
         ) : null}
 
-        {!isConfigured ? <ConfigurationNotice /> : null}
-
-        {isConfigured ? (
+        {
           <section className="flex min-h-0 flex-1 pt-4">
             {activeTab === "chat" ? (
               <ConversationTab
@@ -890,12 +780,10 @@ export default function EnglishReviewApp() {
 
 function AppHeader({
   status,
-  hasSupabase,
   profile,
   onOpenSettings,
 }: {
   status: string;
-  hasSupabase: boolean;
   profile: UserProfile | null;
   onOpenSettings: () => void;
 }) {
@@ -909,7 +797,7 @@ function AppHeader({
           <div>
             <h1 className="font-serif text-xl font-semibold leading-5">SpeakLoop</h1>
             <p className="text-xs text-[#746f68]">
-              {hasSupabase ? "试用已开启" : "学习空间未配置"} · {profile?.display_name || status}
+              试用已开启 · {profile?.display_name || status}
             </p>
           </div>
         </div>
