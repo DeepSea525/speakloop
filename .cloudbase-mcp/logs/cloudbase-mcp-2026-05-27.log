@@ -1,0 +1,275 @@
+[2026-05-27T14:37:57.105+00:00] [DEBUG] [cache] Using default TTL {
+  "ttlMs": 86400000
+}
+[2026-05-27T14:37:57.141+00:00] [DEBUG] report_init {
+  "enabled": true,
+  "deviceId": "bddbd619...",
+  "ide": "none"
+}
+[2026-05-27T14:37:57.169+00:00] [DEBUG] [cache] evaluated cache meta {
+  "ageMs": 81032733,
+  "ttlMs": 86400000,
+  "valid": true
+}
+[2026-05-27T14:37:57.170+00:00] [DEBUG] [downloadResources] 使用缓存（快速路径）
+[2026-05-27T14:37:57.182+00:00] [INFO] TencentCloudBase MCP Server running on stdio
+[2026-05-27T14:37:57.182+00:00] [DEBUG] [telemetry] 生命周期事件 envId 获取结果 {
+  "event": "start",
+  "envId": "speakloop-d0gycd2krc8b125e9",
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID",
+  "hasCloudBaseOptions": false,
+  "cloudBaseOptionsEnvId": null
+}
+[2026-05-27T14:37:57.182+00:00] [DEBUG] [telemetry] 生命周期事件上报参数 {
+  "event": "start",
+  "eventData": {
+    "event": "start",
+    "envId": "speakloop-d0gycd2krc8b125e9",
+    "nodeVersion": "v22.22.2",
+    "osType": "Linux",
+    "osRelease": "5.4.119-19-0009-03_2.0.1-00029-gee3a514c359c",
+    "arch": "x64",
+    "mcpVersion": "2.14.2"
+  },
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID"
+}
+[2026-05-27T14:37:57.261+00:00] [DEBUG] report_success {
+  "eventCode": "toolkit_lifecycle",
+  "deviceId": "bddbd619..."
+}
+[2026-05-27T14:37:58.743+00:00] [DEBUG] [cache] Using default TTL {
+  "ttlMs": 86400000
+}
+[2026-05-27T14:37:58.775+00:00] [DEBUG] report_init {
+  "enabled": true,
+  "deviceId": "bddbd619...",
+  "ide": "none"
+}
+[2026-05-27T14:37:58.799+00:00] [DEBUG] [cache] evaluated cache meta {
+  "ageMs": 81034363,
+  "ttlMs": 86400000,
+  "valid": true
+}
+[2026-05-27T14:37:58.800+00:00] [DEBUG] [downloadResources] 使用缓存（快速路径）
+[2026-05-27T14:37:58.812+00:00] [INFO] TencentCloudBase MCP Server running on stdio
+[2026-05-27T14:37:58.812+00:00] [DEBUG] [telemetry] 生命周期事件 envId 获取结果 {
+  "event": "start",
+  "envId": "speakloop-d0gycd2krc8b125e9",
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID",
+  "hasCloudBaseOptions": false,
+  "cloudBaseOptionsEnvId": null
+}
+[2026-05-27T14:37:58.812+00:00] [DEBUG] [telemetry] 生命周期事件上报参数 {
+  "event": "start",
+  "eventData": {
+    "event": "start",
+    "envId": "speakloop-d0gycd2krc8b125e9",
+    "nodeVersion": "v22.22.2",
+    "osType": "Linux",
+    "osRelease": "5.4.119-19-0009-03_2.0.1-00029-gee3a514c359c",
+    "arch": "x64",
+    "mcpVersion": "2.14.2"
+  },
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID"
+}
+[2026-05-27T14:37:58.838+00:00] [DEBUG] 开始执行工具: writeNoSqlDatabaseStructure {
+  "args": {
+    "action": "createCollection",
+    "collectionName": "conversations"
+  }
+}
+[2026-05-27T14:37:58.839+00:00] [DEBUG] loginByApiSecret
+[2026-05-27T14:37:58.839+00:00] [DEBUG] 使用 envManager 缓存的环境ID: {
+  "cachedEnvId": "speakloop-d0gycd2krc8b125e9"
+}
+[2026-05-27T14:37:58.880+00:00] [DEBUG] report_success {
+  "eventCode": "toolkit_lifecycle",
+  "deviceId": "bddbd619..."
+}
+[2026-05-27T14:37:59.030+00:00] [DEBUG] 工具执行成功: writeNoSqlDatabaseStructure {
+  "duration": 191
+}
+[2026-05-27T14:37:59.030+00:00] [DEBUG] [telemetry] 工具调用 envId 获取结果 {
+  "toolName": "writeNoSqlDatabaseStructure",
+  "envId": "speakloop-d0gycd2krc8b125e9",
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID",
+  "hasCloudBaseOptions": false,
+  "cloudBaseOptionsEnvId": null
+}
+[2026-05-27T14:37:59.031+00:00] [DEBUG] [telemetry] 工具调用上报参数 {
+  "toolName": "writeNoSqlDatabaseStructure",
+  "eventData": {
+    "toolName": "writeNoSqlDatabaseStructure",
+    "success": "true",
+    "duration": 192,
+    "envId": "speakloop-d0gycd2krc8b125e9",
+    "nodeVersion": "v22.22.2",
+    "osType": "Linux",
+    "osRelease": "5.4.119-19-0009-03_2.0.1-00029-gee3a514c359c",
+    "arch": "x64",
+    "mcpVersion": "2.14.2",
+    "inputParams": "[已包含]"
+  },
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID"
+}
+[2026-05-27T14:37:59.041+00:00] [DEBUG] report_success {
+  "eventCode": "toolkit_tool_call",
+  "deviceId": "bddbd619..."
+}
+[2026-05-27T14:38:15.117+00:00] [DEBUG] [cache] Using default TTL {
+  "ttlMs": 86400000
+}
+[2026-05-27T14:38:15.149+00:00] [DEBUG] report_init {
+  "enabled": true,
+  "deviceId": "bddbd619...",
+  "ide": "none"
+}
+[2026-05-27T14:38:15.174+00:00] [DEBUG] [cache] evaluated cache meta {
+  "ageMs": 81050737,
+  "ttlMs": 86400000,
+  "valid": true
+}
+[2026-05-27T14:38:15.175+00:00] [DEBUG] [downloadResources] 使用缓存（快速路径）
+[2026-05-27T14:38:15.187+00:00] [INFO] TencentCloudBase MCP Server running on stdio
+[2026-05-27T14:38:15.188+00:00] [DEBUG] [telemetry] 生命周期事件 envId 获取结果 {
+  "event": "start",
+  "envId": "speakloop-d0gycd2krc8b125e9",
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID",
+  "hasCloudBaseOptions": false,
+  "cloudBaseOptionsEnvId": null
+}
+[2026-05-27T14:38:15.188+00:00] [DEBUG] [telemetry] 生命周期事件上报参数 {
+  "event": "start",
+  "eventData": {
+    "event": "start",
+    "envId": "speakloop-d0gycd2krc8b125e9",
+    "nodeVersion": "v22.22.2",
+    "osType": "Linux",
+    "osRelease": "5.4.119-19-0009-03_2.0.1-00029-gee3a514c359c",
+    "arch": "x64",
+    "mcpVersion": "2.14.2"
+  },
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID"
+}
+[2026-05-27T14:38:15.217+00:00] [DEBUG] 开始执行工具: readNoSqlDatabaseStructure {
+  "args": {
+    "action": "listCollections"
+  }
+}
+[2026-05-27T14:38:15.218+00:00] [DEBUG] loginByApiSecret
+[2026-05-27T14:38:15.218+00:00] [DEBUG] 使用 envManager 缓存的环境ID: {
+  "cachedEnvId": "speakloop-d0gycd2krc8b125e9"
+}
+[2026-05-27T14:38:15.259+00:00] [DEBUG] report_success {
+  "eventCode": "toolkit_lifecycle",
+  "deviceId": "bddbd619..."
+}
+[2026-05-27T14:38:15.504+00:00] [DEBUG] 工具执行成功: readNoSqlDatabaseStructure {
+  "duration": 288
+}
+[2026-05-27T14:38:15.505+00:00] [DEBUG] [telemetry] 工具调用 envId 获取结果 {
+  "toolName": "readNoSqlDatabaseStructure",
+  "envId": "speakloop-d0gycd2krc8b125e9",
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID",
+  "hasCloudBaseOptions": false,
+  "cloudBaseOptionsEnvId": null
+}
+[2026-05-27T14:38:15.505+00:00] [DEBUG] [telemetry] 工具调用上报参数 {
+  "toolName": "readNoSqlDatabaseStructure",
+  "eventData": {
+    "toolName": "readNoSqlDatabaseStructure",
+    "success": "true",
+    "duration": 288,
+    "envId": "speakloop-d0gycd2krc8b125e9",
+    "nodeVersion": "v22.22.2",
+    "osType": "Linux",
+    "osRelease": "5.4.119-19-0009-03_2.0.1-00029-gee3a514c359c",
+    "arch": "x64",
+    "mcpVersion": "2.14.2",
+    "inputParams": "[已包含]"
+  },
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID"
+}
+[2026-05-27T14:38:15.517+00:00] [DEBUG] report_success {
+  "eventCode": "toolkit_tool_call",
+  "deviceId": "bddbd619..."
+}
+[2026-05-27T14:38:22.639+00:00] [DEBUG] [cache] Using default TTL {
+  "ttlMs": 86400000
+}
+[2026-05-27T14:38:22.671+00:00] [DEBUG] report_init {
+  "enabled": true,
+  "deviceId": "bddbd619...",
+  "ide": "none"
+}
+[2026-05-27T14:38:22.695+00:00] [DEBUG] [cache] evaluated cache meta {
+  "ageMs": 81058259,
+  "ttlMs": 86400000,
+  "valid": true
+}
+[2026-05-27T14:38:22.696+00:00] [DEBUG] [downloadResources] 使用缓存（快速路径）
+[2026-05-27T14:38:22.708+00:00] [INFO] TencentCloudBase MCP Server running on stdio
+[2026-05-27T14:38:22.709+00:00] [DEBUG] [telemetry] 生命周期事件 envId 获取结果 {
+  "event": "start",
+  "envId": "speakloop-d0gycd2krc8b125e9",
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID",
+  "hasCloudBaseOptions": false,
+  "cloudBaseOptionsEnvId": null
+}
+[2026-05-27T14:38:22.709+00:00] [DEBUG] [telemetry] 生命周期事件上报参数 {
+  "event": "start",
+  "eventData": {
+    "event": "start",
+    "envId": "speakloop-d0gycd2krc8b125e9",
+    "nodeVersion": "v22.22.2",
+    "osType": "Linux",
+    "osRelease": "5.4.119-19-0009-03_2.0.1-00029-gee3a514c359c",
+    "arch": "x64",
+    "mcpVersion": "2.14.2"
+  },
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID"
+}
+[2026-05-27T14:38:22.735+00:00] [DEBUG] 开始执行工具: writeNoSqlDatabaseStructure {
+  "args": {
+    "action": "createCollection",
+    "collectionName": "review_events"
+  }
+}
+[2026-05-27T14:38:22.736+00:00] [DEBUG] loginByApiSecret
+[2026-05-27T14:38:22.737+00:00] [DEBUG] 使用 envManager 缓存的环境ID: {
+  "cachedEnvId": "speakloop-d0gycd2krc8b125e9"
+}
+[2026-05-27T14:38:22.782+00:00] [DEBUG] report_success {
+  "eventCode": "toolkit_lifecycle",
+  "deviceId": "bddbd619..."
+}
+[2026-05-27T14:38:22.896+00:00] [DEBUG] 工具执行成功: writeNoSqlDatabaseStructure {
+  "duration": 160
+}
+[2026-05-27T14:38:22.896+00:00] [DEBUG] [telemetry] 工具调用 envId 获取结果 {
+  "toolName": "writeNoSqlDatabaseStructure",
+  "envId": "speakloop-d0gycd2krc8b125e9",
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID",
+  "hasCloudBaseOptions": false,
+  "cloudBaseOptionsEnvId": null
+}
+[2026-05-27T14:38:22.897+00:00] [DEBUG] [telemetry] 工具调用上报参数 {
+  "toolName": "writeNoSqlDatabaseStructure",
+  "eventData": {
+    "toolName": "writeNoSqlDatabaseStructure",
+    "success": "true",
+    "duration": 161,
+    "envId": "speakloop-d0gycd2krc8b125e9",
+    "nodeVersion": "v22.22.2",
+    "osType": "Linux",
+    "osRelease": "5.4.119-19-0009-03_2.0.1-00029-gee3a514c359c",
+    "arch": "x64",
+    "mcpVersion": "2.14.2",
+    "inputParams": "[已包含]"
+  },
+  "envIdSource": "process.env.CLOUDBASE_ENV_ID"
+}
+[2026-05-27T14:38:22.910+00:00] [DEBUG] report_success {
+  "eventCode": "toolkit_tool_call",
+  "deviceId": "bddbd619..."
+}
