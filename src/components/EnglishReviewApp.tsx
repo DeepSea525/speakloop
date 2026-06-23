@@ -16,9 +16,8 @@ import {
   Volume2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { auth, db, callFunction, signInAnonymously, getCurrentUserId } from "@/lib/cloudbase";
-import { extractLearningPoints, chatWithAI, getPracticeFeedback, getCoaching } from "@/lib/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
 import {
   isDue,
   makeId,
@@ -143,7 +142,9 @@ function toReviewItem(row: DatabaseReviewItem): ReviewItem {
 }
 
 export default function EnglishReviewApp() {
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const speech = useSpeech();
+  const audioPrimedRef = useRef(false);
   const [activeTab, setActiveTab] = useState<TabKey>("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -164,10 +165,19 @@ export default function EnglishReviewApp() {
   const [extraction, setExtraction] = useState<ExtractionResult | null>(null);
   const [practiceFeedback, setPracticeFeedback] = useState<PracticeFeedback | null>(null);
   const [busy, setBusy] = useState<BusyState>(null);
-  const [status, setStatus] = useState("正在连接学习空间");
+  const [status, setStatus] = useState(() => {
+    if (
+      process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+    ) {
+      return "正在连接学习空间";
+    }
+    return "学习空间未配置";
+  });
   const [error, setError] = useState("");
 
-  const isConfigured = true;
+  const hasSupabase = Boolean(supabase);
+  const isConfigured = hasSupabase;
   const chatConversations = useMemo(
     () => conversations.filter((conversation) => conversation.source_type === "chat"),
     [conversations],
@@ -178,53 +188,77 @@ export default function EnglishReviewApp() {
   }, [dueItems, items, selectedItemId]);
 
   useEffect(() => {
+    if (!supabase) return;
+
+    const client = supabase;
     let cancelled = false;
 
     async function init() {
-      try {
-        // 匿名登录
-        await signInAnonymously();
-        const currentUserId = await getCurrentUserId();
-        
-        if (cancelled || !currentUserId) return;
+      const { data: sessionData } = await client.auth.getSession();
+      let sessionUserId = sessionData.session?.user.id ?? null;
 
-        setUserId(currentUserId);
-        setStatus("正在加载学习记录");
-
-        // 加载用户资料
-        const profileRes = await db.collection("profiles").where({ user_id: currentUserId }).get();
-        const profileData = profileRes.data[0] as UserProfile | undefined;
-
-        if (!cancelled) {
-          setProfile(profileData || null);
-          setProfileOpen(!profileData);
-          setStatus(profileData ? "试用已开启" : "请设置昵称");
+      if (!sessionUserId) {
+        const { data, error: signInError } = await client.auth.signInAnonymously();
+        if (signInError) {
+          setError(signInError.message);
+          setStatus("匿名登录失败");
+          return;
         }
+        sessionUserId = data.user?.id ?? null;
+      }
 
-        // 加载复习项目
-        const itemsRes = await db.collection("review_items")
-          .where({ user_id: currentUserId })
-          .orderBy("due_at", "asc")
-          .limit(200)
-          .get();
-        
-        if (!cancelled && itemsRes.data) {
-          setItems(itemsRes.data.map(toReviewItem));
-        }
+      if (cancelled || !sessionUserId) return;
 
-        // 加载对话记录
-        const convRes = await db.collection("conversations")
-          .where({ user_id: currentUserId })
-          .orderBy("created_at", "desc")
-          .limit(20)
-          .get();
-        
-        if (!cancelled && convRes.data) {
-          setConversations(convRes.data as ConversationRecord[]);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "初始化失败");
-        setStatus("连接失败");
+      setUserId(sessionUserId);
+      setStatus("正在加载学习记录");
+
+      const { data: profileData, error: profileError } = await client
+        .from("profiles")
+        .select("*")
+        .eq("user_id", sessionUserId)
+        .maybeSingle();
+
+      if (profileError) {
+        setError(profileError.message);
+        setStatus("资料加载失败");
+        return;
+      }
+
+      if (!cancelled) {
+        const nextProfile = (profileData as UserProfile | null) ?? null;
+        setProfile(nextProfile);
+        setProfileOpen(!nextProfile);
+        setStatus(nextProfile ? "试用已开启" : "请设置昵称");
+      }
+
+      const { data, error: loadError } = await client
+        .from("review_items")
+        .select("*")
+        .order("due_at", { ascending: true })
+        .limit(200);
+
+      if (loadError) {
+        setError(loadError.message);
+        return;
+      }
+
+      if (!cancelled && data) {
+        setItems((data as DatabaseReviewItem[]).map(toReviewItem));
+      }
+
+      const { data: conversationData, error: conversationError } = await client
+        .from("conversations")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (conversationError) {
+        setError(conversationError.message);
+        return;
+      }
+
+      if (!cancelled && conversationData) {
+        setConversations(conversationData as ConversationRecord[]);
       }
     }
 
@@ -233,7 +267,7 @@ export default function EnglishReviewApp() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [supabase]);
 
   function saveAutoRead(value: boolean) {
     setAutoReadAssistant(value);
@@ -247,6 +281,12 @@ export default function EnglishReviewApp() {
       autoReadAssistant: savedAutoRead,
     };
   }
+
+  const primeAudioOnce = useCallback(() => {
+    if (audioPrimedRef.current || !autoReadAssistant) return;
+    audioPrimedRef.current = true;
+    speech.prime();
+  }, [autoReadAssistant, speech]);
 
   async function saveProfile(displayName: string) {
     if (!supabase || !userId) {
@@ -276,8 +316,8 @@ export default function EnglishReviewApp() {
     setStatus("试用已开启");
   }
 
-  const checkAuth = useCallback(async () => {
-    if (!userId) {
+  const getApiHeaders = useCallback(async () => {
+    if (!supabase || !userId) {
       throw new Error("学习空间还在连接，请稍后再试。");
     }
 
@@ -285,47 +325,66 @@ export default function EnglishReviewApp() {
       setProfileOpen(true);
       throw new Error("请先设置昵称，系统会用它区分你的试用记录。");
     }
-  }, [profile, userId]);
+
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (sessionError || !token) {
+      throw new Error("登录状态已失效，请刷新页面后重试。");
+    }
+
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+  }, [profile, supabase, userId]);
 
   async function createConversation(title: string, sourceType: "paste" | "chat") {
-    if (!userId) return null;
+    if (!supabase || !userId) return null;
 
-    const res = await db.collection("conversations").add({
-      user_id: userId,
-      title,
-      source_type: sourceType,
-      created_at: new Date(),
-    });
+    const { data, error: insertError } = await supabase
+      .from("conversations")
+      .insert({
+        user_id: userId,
+        title,
+        source_type: sourceType,
+      })
+      .select()
+      .single();
 
-    return res.id;
+    if (insertError) throw insertError;
+    return (data as ConversationRecord).id;
   }
 
   async function refreshConversations() {
-    if (!userId) return;
+    if (!supabase || !userId) return;
 
-    const res = await db.collection("conversations")
-      .where({ user_id: userId })
-      .orderBy("created_at", "desc")
-      .limit(20)
-      .get();
+    const { data, error: loadError } = await supabase
+      .from("conversations")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(20);
 
-    setConversations(res.data as ConversationRecord[]);
+    if (loadError) throw loadError;
+    setConversations((data ?? []) as ConversationRecord[]);
   }
 
   async function loadConversation(conversationId: string) {
-    if (!userId) return;
+    if (!supabase || !userId) return;
 
     setBusy("history");
     setError("");
 
     try {
       const conversation = conversations.find((candidate) => candidate.id === conversationId) ?? null;
-      const res = await db.collection("messages")
-        .where({ conversation_id: conversationId })
-        .orderBy("created_at", "asc")
-        .get();
+      const { data, error: loadError } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: true });
 
-      const loadedMessages = (res.data as DatabaseMessage[]).map((message) => ({
+      if (loadError) throw loadError;
+
+      const loadedMessages = ((data ?? []) as DatabaseMessage[]).map((message) => ({
         id: message.id,
         role: message.role,
         content: message.content,
@@ -377,10 +436,8 @@ export default function EnglishReviewApp() {
       created_at: message.createdAt,
     }));
 
-    // 使用云开发数据库保存消息
-    for (const row of rows) {
-      await db.collection("messages").add(row);
-    }
+    const { error: insertError } = await supabase.from("messages").insert(rows);
+    if (insertError) throw insertError;
   }
 
   async function runCoaching(text?: string) {
@@ -396,9 +453,24 @@ export default function EnglishReviewApp() {
     setCoaching(null);
 
     try {
-      const { result } = await getCoaching(sourceText, chatScene);
-      setCoaching(result);
-      speech.speak(result.practice_line || result.recommended_en);
+      const headers = await getApiHeaders();
+      const response = await fetch("/api/ark/coach", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: MODEL,
+          text: sourceText,
+          scene: chatScene,
+        }),
+      });
+
+      const payload = (await response.json()) as { result?: CoachingResult; error?: string };
+      if (!response.ok || !payload.result) {
+        throw new Error(payload.error || "表达求助失败。");
+      }
+
+      setCoaching(payload.result);
+      speech.speak(payload.result.practice_line || payload.result.recommended_en);
     } catch (coachError) {
       setError(coachError instanceof Error ? coachError.message : "表达求助失败。");
     } finally {
@@ -424,21 +496,29 @@ export default function EnglishReviewApp() {
       due_at: nowIso(),
     };
 
-    if (userId) {
-      const res = await db.collection("review_items").add({
-        user_id: userId,
-        conversation_id: chatConversationId,
-        kind: item.kind,
-        prompt_cn: item.prompt_cn,
-        answer_en: item.answer_en,
-        explanation: item.explanation,
-        tags: item.tags,
-        difficulty: item.difficulty,
-        due_at: item.due_at,
-        created_at: new Date(),
-      });
+    if (supabase && userId) {
+      const { data, error: insertError } = await supabase
+        .from("review_items")
+        .insert({
+          user_id: userId,
+          conversation_id: chatConversationId,
+          kind: item.kind,
+          prompt_cn: item.prompt_cn,
+          answer_en: item.answer_en,
+          explanation: item.explanation,
+          tags: item.tags,
+          difficulty: item.difficulty,
+          due_at: item.due_at,
+        })
+        .select("*")
+        .single();
 
-      const savedItem = { ...item, id: res.id };
+      if (insertError) {
+        setError(insertError.message);
+        return;
+      }
+
+      const savedItem = toReviewItem(data as DatabaseReviewItem);
       setItems((current) => [savedItem, ...current]);
       setSelectedItemId(savedItem.id);
     } else {
@@ -464,8 +544,22 @@ export default function EnglishReviewApp() {
     setError("");
 
     try {
-      const { result } = await extractLearningPoints(sourceText);
-      setExtraction(result);
+      const headers = await getApiHeaders();
+      const response = await fetch("/api/ark/extract", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: MODEL,
+          transcript: sourceText,
+        }),
+      });
+
+      const payload = (await response.json()) as { result?: ExtractionResult; error?: string };
+      if (!response.ok || !payload.result) {
+        throw new Error(payload.error || "AI 整理失败。");
+      }
+
+      setExtraction(payload.result);
       setExtractionSourceType(source);
       setExtractionSourceText(sourceText);
       setStatus("学习点待确认");
@@ -502,35 +596,38 @@ export default function EnglishReviewApp() {
           ]);
         }
 
-        await db.collection("extraction_runs").add({
+        await supabase.from("extraction_runs").insert({
           user_id: userId,
           conversation_id: conversationId,
           model: MODEL,
           input_summary: extractionSourceText.slice(0, 800),
           status: "success",
-          created_at: new Date(),
         });
       }
 
       const nextItems = reviewItemsFromExtraction(extraction, conversationId ?? undefined);
 
-      if (userId) {
-        const savedItems: ReviewItem[] = [];
-        for (const item of nextItems) {
-          const res = await db.collection("review_items").add({
-            user_id: userId,
-            conversation_id: conversationId,
-            kind: item.kind,
-            prompt_cn: item.prompt_cn,
-            answer_en: item.answer_en,
-            explanation: item.explanation,
-            tags: item.tags,
-            difficulty: item.difficulty,
-            due_at: item.due_at,
-            created_at: new Date(),
-          });
-          savedItems.push({ ...item, id: res.id });
-        }
+      if (supabase && userId) {
+        const rows = nextItems.map((item) => ({
+          user_id: userId,
+          conversation_id: conversationId,
+          kind: item.kind,
+          prompt_cn: item.prompt_cn,
+          answer_en: item.answer_en,
+          explanation: item.explanation,
+          tags: item.tags,
+          difficulty: item.difficulty,
+          due_at: item.due_at,
+        }));
+
+        const { data, error: insertError } = await supabase
+          .from("review_items")
+          .insert(rows)
+          .select("*");
+
+        if (insertError) throw insertError;
+
+        const savedItems = ((data ?? []) as DatabaseReviewItem[]).map(toReviewItem);
         setItems((current) => [...savedItems, ...current]);
         setSelectedItemId(savedItems[0]?.id ?? selectedItemId);
       } else {
@@ -554,11 +651,12 @@ export default function EnglishReviewApp() {
     if (!content) return;
 
     const localSettings = syncLocalSettings();
+    let headers: Record<string, string>;
 
     try {
-      await checkAuth();
-    } catch (authError) {
-      setError(authError instanceof Error ? authError.message : "学习空间还在连接，请稍后再试。");
+      headers = await getApiHeaders();
+    } catch (headerError) {
+      setError(headerError instanceof Error ? headerError.message : "学习空间还在连接，请稍后再试。");
       return;
     }
 
@@ -579,12 +677,25 @@ export default function EnglishReviewApp() {
     }
 
     try {
-      const aiText = await chatWithAI(nextMessages, chatScene);
-      
+      const response = await fetch("/api/ark/chat", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: MODEL,
+          messages: nextMessages,
+          scene: chatScene,
+        }),
+      });
+
+      const payload = (await response.json()) as { text?: string; error?: string };
+      if (!response.ok || !payload.text) {
+        throw new Error(payload.error || "AI 对话失败。");
+      }
+
       const assistantMessage: ChatMessage = {
         id: makeId("msg"),
         role: "assistant",
-        content: aiText,
+        content: payload.text,
         createdAt: nowIso(),
       };
 
@@ -628,20 +739,18 @@ export default function EnglishReviewApp() {
       setSelectedItemId(nextItem?.id ?? null);
       setPracticeFeedback(null);
 
-      if (userId && !item.id.startsWith("seed_")) {
-        await db.collection("review_items").doc(item.id).update({
-          due_at: dueAt,
-          mastered_at: masteredAt,
-          difficulty,
-        });
+      if (supabase && userId && !item.id.startsWith("seed_")) {
+        await supabase
+          .from("review_items")
+          .update({ due_at: dueAt, mastered_at: masteredAt, difficulty })
+          .eq("id", item.id);
 
-        await db.collection("review_events").add({
+        await supabase.from("review_events").insert({
           user_id: userId,
           review_item_id: item.id,
           rating,
           correct: rating !== "hard",
           duration_ms: null,
-          created_at: new Date(),
         });
       }
     },
@@ -659,8 +768,24 @@ export default function EnglishReviewApp() {
     setPracticeFeedback(null);
 
     try {
-      const { result } = await getPracticeFeedback(practicePrompt(item), item.answer_en, learnerAnswer);
-      setPracticeFeedback(result);
+      const headers = await getApiHeaders();
+      const response = await fetch("/api/ark/practice-feedback", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: MODEL,
+          promptCn: practicePrompt(item),
+          referenceAnswer: item.answer_en,
+          learnerAnswer,
+        }),
+      });
+
+      const payload = (await response.json()) as { result?: PracticeFeedback; error?: string };
+      if (!response.ok || !payload.result) {
+        throw new Error(payload.error || "AI 评估失败。");
+      }
+
+      setPracticeFeedback(payload.result);
     } catch (feedbackError) {
       setError(feedbackError instanceof Error ? feedbackError.message : "AI 评估失败。");
     } finally {
@@ -669,11 +794,15 @@ export default function EnglishReviewApp() {
   }
 
   return (
-    <main className="min-h-dvh bg-[#f4f0e8] text-[#191715]">
-      <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-4 pb-[calc(6.5rem_+_env(safe-area-inset-bottom))] pt-[calc(1rem_+_env(safe-area-inset-top))] sm:px-6 lg:max-w-5xl">
+    <main
+      className="min-h-dvh bg-[#f4f0e8] text-[#191715]"
+      onPointerDownCapture={primeAudioOnce}
+      onKeyDownCapture={primeAudioOnce}
+    >
+      <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-3 pb-[calc(5.5rem_+_env(safe-area-inset-bottom))] pt-[calc(0.75rem_+_env(safe-area-inset-top))] sm:px-6 sm:pb-[calc(6.5rem_+_env(safe-area-inset-bottom))] sm:pt-[calc(1rem_+_env(safe-area-inset-top))] lg:max-w-5xl">
         <AppHeader
           status={status}
-
+          hasSupabase={hasSupabase}
           profile={profile}
           onOpenSettings={() => {
             syncLocalSettings();
@@ -685,8 +814,10 @@ export default function EnglishReviewApp() {
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
         ) : null}
 
-        {
-          <section className="flex min-h-0 flex-1 pt-4">
+        {!isConfigured ? <ConfigurationNotice /> : null}
+
+        {isConfigured ? (
+          <section className="flex min-h-0 flex-1 pt-3 sm:pt-4">
             {activeTab === "chat" ? (
               <ConversationTab
                 messages={messages}
@@ -780,24 +911,26 @@ export default function EnglishReviewApp() {
 
 function AppHeader({
   status,
+  hasSupabase,
   profile,
   onOpenSettings,
 }: {
   status: string;
+  hasSupabase: boolean;
   profile: UserProfile | null;
   onOpenSettings: () => void;
 }) {
   return (
-    <header className="flex items-center justify-between gap-4 border-b border-[#ddd5c8] pb-4">
-      <div>
+    <header className="flex items-center justify-between gap-3 border-b border-[#ddd5c8] pb-3 sm:gap-4 sm:pb-4">
+      <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#191715] text-white">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#191715] text-white">
             <Sparkles size={17} />
           </div>
-          <div>
+          <div className="min-w-0">
             <h1 className="font-serif text-xl font-semibold leading-5">SpeakLoop</h1>
-            <p className="text-xs text-[#746f68]">
-              试用已开启 · {profile?.display_name || status}
+            <p className="truncate text-xs text-[#746f68]">
+              {hasSupabase ? "试用已开启" : "学习空间未配置"} · {profile?.display_name || status}
             </p>
           </div>
         </div>
@@ -805,7 +938,7 @@ function AppHeader({
       <button
         type="button"
         onClick={onOpenSettings}
-        className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#ddd5c8] bg-white text-[#191715] shadow-sm"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#ddd5c8] bg-white text-[#191715] shadow-sm"
         aria-label="打开设置"
       >
         <Settings size={18} />
@@ -875,19 +1008,24 @@ function ConversationTab({
   busy: BusyState;
 }) {
   return (
-    <section className="flex min-h-[calc(100dvh_-_11rem_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom))] w-full flex-col">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-[#746f68]">AI Speaking Room</p>
-          <h2 className="mt-1 font-serif text-3xl font-semibold leading-tight">先说出来，再慢慢变好</h2>
+    <section className="flex min-h-[calc(100dvh_-_9.5rem_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom))] w-full flex-col sm:min-h-[calc(100dvh_-_11rem_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom))]">
+      <div className="mb-3 flex items-start justify-between gap-3 sm:mb-4 sm:items-center">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-[#746f68] sm:text-sm">AI Speaking Room</p>
+          <h2 className="mt-1 font-serif text-2xl font-semibold leading-tight sm:text-3xl">先说出来，再慢慢变好</h2>
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-[#ddd5c8] bg-white px-3 py-2 text-xs font-medium text-[#746f68]">
+        <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-[#ddd5c8] bg-white px-2.5 py-2 text-[11px] font-medium text-[#746f68] sm:gap-2 sm:px-3 sm:text-xs">
           <Volume2 size={14} className="text-[#8f2638]" />
-          {autoReadAssistant ? "AI 回复自动朗读" : "自动朗读已关闭"}
+          <span className="hidden min-[390px]:inline">{autoReadAssistant ? "AI 回复自动朗读" : "自动朗读已关闭"}</span>
+          <span className="min-[390px]:hidden">{autoReadAssistant ? "朗读开" : "朗读关"}</span>
         </div>
       </div>
 
-      <div className="mb-3 rounded-lg border border-[#ddd5c8] bg-white p-3 shadow-sm">
+      <div
+        className={`mb-2 rounded-lg border border-[#ddd5c8] bg-white p-3 shadow-sm sm:mb-3 ${
+          conversations.length ? "" : "hidden sm:block"
+        }`}
+      >
         <div className="mb-2 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <History size={16} />
@@ -927,17 +1065,17 @@ function ConversationTab({
         )}
       </div>
 
-      <div className="mb-3 rounded-lg border border-[#ddd5c8] bg-white p-3 shadow-sm">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <div>
+      <div className="mb-2 rounded-lg border border-[#ddd5c8] bg-white p-3 shadow-sm sm:mb-3">
+        <div className="mb-2 flex items-start justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-sm font-semibold">场景练习</p>
-            <p className="mt-1 text-xs leading-5 text-[#746f68]">
+            <p className="mt-1 hidden text-xs leading-5 text-[#746f68] sm:block">
               切换标签会随机换一句开场，让你直接进入一个可聊的情境。
             </p>
           </div>
-          <span className="rounded-full bg-[#ebe7df] px-2 py-1 text-xs font-semibold text-[#5d6b57]">{scene}</span>
+          <span className="shrink-0 rounded-full bg-[#ebe7df] px-2 py-1 text-xs font-semibold text-[#5d6b57]">{scene}</span>
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {scenes.map((candidate) => (
             <button
               key={candidate}
@@ -954,7 +1092,7 @@ function ConversationTab({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-[#ddd5c8] bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-[#e8e1d6] px-4 py-3">
+        <div className="flex items-center justify-between border-b border-[#e8e1d6] px-3 py-2.5 sm:px-4 sm:py-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <MessageCircle size={16} />
             对话
@@ -962,14 +1100,14 @@ function ConversationTab({
           <button
             type="button"
             onClick={onExtractChat}
-            className="inline-flex h-9 items-center gap-2 rounded-md bg-[#191715] px-3 text-sm font-semibold text-white"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[#191715] px-3 text-sm font-semibold text-white sm:gap-2"
           >
             {busy === "extract" ? <Loader2 className="animate-spin" size={15} /> : <Sparkles size={15} />}
             整理
           </button>
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto p-4">
+        <div className="min-h-[26dvh] flex-1 space-y-3 overflow-y-auto p-3 sm:min-h-0 sm:p-4">
           {messages.map((message) => (
             <div
               key={message.id}
@@ -986,7 +1124,7 @@ function ConversationTab({
                 </button>
               ) : null}
               <div
-                className={`max-w-[82%] rounded-lg px-3 py-2 text-sm leading-6 ${
+                className={`max-w-[86%] rounded-lg px-3 py-2 text-sm leading-6 sm:max-w-[82%] ${
                   message.role === "user" ? "bg-[#ebe7df] text-[#191715]" : "bg-[#f7f4ed] text-[#302c28]"
                 }`}
               >
@@ -1002,7 +1140,7 @@ function ConversationTab({
           ) : null}
         </div>
 
-        <div className="border-t border-[#e8e1d6] p-3">
+        <div className="border-t border-[#e8e1d6] p-2.5 sm:p-3">
           {coaching ? (
             <section className="mb-3 rounded-lg border border-[#ddd5c8] bg-[#fffdf8] p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
@@ -1053,7 +1191,7 @@ function ConversationTab({
               </div>
             </section>
           ) : null}
-          <div className="flex gap-2">
+          <div className="grid gap-2 sm:flex">
             <input
               value={chatInput}
               onChange={(event) => onChatInputChange(event.target.value)}
@@ -1061,27 +1199,29 @@ function ConversationTab({
                 if (event.key === "Enter") onSendChat();
               }}
               placeholder="用英语说一句..."
-              className="h-12 min-w-0 flex-1 rounded-md border border-[#ddd5c8] bg-[#fffdf8] px-3 text-base outline-none focus:border-[#5d6b57] focus:ring-2 focus:ring-[#5d6b57]/15 sm:text-sm"
+              className="h-12 min-w-0 rounded-md border border-[#ddd5c8] bg-[#fffdf8] px-3 text-base outline-none focus:border-[#5d6b57] focus:ring-2 focus:ring-[#5d6b57]/15 sm:flex-1 sm:text-sm"
             />
-            <button
-              type="button"
-              onClick={onRunCoaching}
-              className="inline-flex h-12 shrink-0 items-center justify-center gap-1.5 rounded-md border border-[#ddd5c8] bg-[#fffdf8] px-3 text-sm font-semibold text-[#191715]"
-            >
-              {busy === "coach" ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
-              帮我说
-            </button>
-            <button
-              type="button"
-              onPointerDown={() => {
-                if (autoReadAssistant) onPrimeSpeech();
-              }}
-              onClick={onSendChat}
-              className="inline-flex h-12 min-w-16 items-center justify-center gap-1.5 rounded-md bg-[#8f2638] px-3 text-sm font-semibold text-white sm:min-w-20 sm:gap-2 sm:px-4"
-            >
-              <Send size={16} />
-              Send
-            </button>
+            <div className="grid grid-cols-[1fr_auto] gap-2 sm:contents">
+              <button
+                type="button"
+                onClick={onRunCoaching}
+                className="inline-flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border border-[#ddd5c8] bg-[#fffdf8] px-3 text-sm font-semibold text-[#191715] sm:h-12 sm:shrink-0"
+              >
+                {busy === "coach" ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
+                帮我说
+              </button>
+              <button
+                type="button"
+                onPointerDown={() => {
+                  if (autoReadAssistant) onPrimeSpeech();
+                }}
+                onClick={onSendChat}
+                className="inline-flex h-11 min-w-20 items-center justify-center gap-1.5 rounded-md bg-[#8f2638] px-3 text-sm font-semibold text-white sm:h-12 sm:min-w-20 sm:gap-2 sm:px-4"
+              >
+                <Send size={16} />
+                Send
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1106,15 +1246,15 @@ function RecordsTab({
 }) {
   return (
     <section className="grid w-full gap-4">
-      <div className="mb-5">
-        <p className="text-sm font-medium text-[#746f68]">Records</p>
-        <h2 className="mt-1 font-serif text-3xl font-semibold leading-tight">历史记录和导入</h2>
+      <div className="mb-2 sm:mb-5">
+        <p className="text-xs font-medium text-[#746f68] sm:text-sm">Records</p>
+        <h2 className="mt-1 font-serif text-2xl font-semibold leading-tight sm:text-3xl">历史记录和导入</h2>
         <p className="mt-2 max-w-xl text-sm leading-6 text-[#746f68]">
           站内对话和手动粘贴都会沉淀到这里。你可以回看旧记录，也可以导入新的对话生成复习。
         </p>
       </div>
 
-      <section className="rounded-lg border border-[#ddd5c8] bg-white p-4 shadow-sm">
+      <section className="rounded-lg border border-[#ddd5c8] bg-white p-3 shadow-sm sm:p-4">
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
           <History size={16} />
           全部记录
@@ -1147,7 +1287,7 @@ function RecordsTab({
         )}
       </section>
 
-      <div className="rounded-lg border border-[#ddd5c8] bg-white p-4 shadow-sm">
+      <div className="rounded-lg border border-[#ddd5c8] bg-white p-3 shadow-sm sm:p-4">
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
           <ClipboardPaste size={16} />
           手动导入
@@ -1156,7 +1296,7 @@ function RecordsTab({
           value={transcript}
           onChange={(event) => onTranscriptChange(event.target.value)}
           placeholder="把你和 AI 的英语对话记录粘贴到这里..."
-          className="min-h-[min(420px,calc(100dvh_-_18rem))] w-full resize-y rounded-lg border border-[#ddd5c8] bg-[#fffdf8] p-4 text-base leading-6 outline-none focus:border-[#5d6b57] focus:ring-2 focus:ring-[#5d6b57]/15 sm:text-sm"
+          className="min-h-[min(340px,calc(100dvh_-_20rem))] w-full resize-y rounded-lg border border-[#ddd5c8] bg-[#fffdf8] p-3 text-base leading-6 outline-none focus:border-[#5d6b57] focus:ring-2 focus:ring-[#5d6b57]/15 sm:min-h-[min(420px,calc(100dvh_-_18rem))] sm:p-4 sm:text-sm"
         />
         <button
           type="button"
@@ -1191,8 +1331,8 @@ function ReviewTab({
   return (
     <section className="grid w-full gap-4">
       <div>
-        <p className="text-sm font-medium text-[#746f68]">Review</p>
-        <h2 className="mt-1 font-serif text-3xl font-semibold leading-tight">整理结果和今日队列</h2>
+        <p className="text-xs font-medium text-[#746f68] sm:text-sm">Review</p>
+        <h2 className="mt-1 font-serif text-2xl font-semibold leading-tight sm:text-3xl">整理结果和今日队列</h2>
       </div>
 
       <ExtractionReview extraction={extraction} busy={busy} onConfirm={onConfirm} />
@@ -1212,14 +1352,14 @@ function ExtractionReview({
 }) {
   if (!extraction) {
     return (
-      <section className="rounded-lg border border-dashed border-[#d6ccbf] bg-white/70 p-5 text-sm leading-6 text-[#746f68]">
+      <section className="rounded-lg border border-dashed border-[#d6ccbf] bg-white/70 p-4 text-sm leading-6 text-[#746f68] sm:p-5">
         暂无待确认的 AI 整理结果。你可以在“对话”页整理当前聊天，或在“导入”页粘贴历史记录。
       </section>
     );
   }
 
   return (
-    <section className="rounded-lg border border-[#ddd5c8] bg-white p-4 shadow-sm">
+    <section className="rounded-lg border border-[#ddd5c8] bg-white p-3 shadow-sm sm:p-4">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-xl font-semibold">{extraction.title}</h3>
@@ -1228,7 +1368,7 @@ function ExtractionReview({
         <button
           type="button"
           onClick={onConfirm}
-          className="inline-flex h-10 items-center gap-2 rounded-md bg-[#5d6b57] px-4 text-sm font-semibold text-white"
+          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[#5d6b57] px-4 text-sm font-semibold text-white sm:w-auto"
         >
           {busy === "save" ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}
           加入复习
@@ -1271,10 +1411,10 @@ function ReviewQueue({
   const visibleItems = dueItems.length ? dueItems : items;
 
   return (
-    <section className="rounded-lg border border-[#ddd5c8] bg-white p-4 shadow-sm">
-      <div className="mb-4 flex items-center justify-between">
+    <section className="rounded-lg border border-[#ddd5c8] bg-white p-3 shadow-sm sm:p-4">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-xl font-semibold">今日复习</h3>
+          <h3 className="text-lg font-semibold sm:text-xl">今日复习</h3>
           <p className="mt-1 text-sm text-[#746f68]">
             {dueItems.length} 个到期，全部 {items.length} 个条目
           </p>
@@ -1334,8 +1474,8 @@ function PracticeTab({
     <section className="w-full">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-[#746f68]">Practice</p>
-          <h2 className="mt-1 font-serif text-3xl font-semibold leading-tight">一张卡片，一次练熟</h2>
+          <p className="text-xs font-medium text-[#746f68] sm:text-sm">Practice</p>
+          <h2 className="mt-1 font-serif text-2xl font-semibold leading-tight sm:text-3xl">一张卡片，一次练熟</h2>
         </div>
         <button
           type="button"
@@ -1465,7 +1605,7 @@ function BottomTabs({
   dueCount: number;
 }) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#ddd5c8] bg-white/95 px-3 pb-[calc(0.5rem_+_env(safe-area-inset-bottom))] pt-2 shadow-[0_-10px_30px_rgba(20,32,25,0.08)] backdrop-blur">
+    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#ddd5c8] bg-white/95 px-2 pb-[calc(0.35rem_+_env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-10px_30px_rgba(20,32,25,0.08)] backdrop-blur sm:px-3 sm:pb-[calc(0.5rem_+_env(safe-area-inset-bottom))] sm:pt-2">
       <div className="mx-auto grid max-w-3xl grid-cols-4 gap-1">
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -1476,14 +1616,14 @@ function BottomTabs({
               key={tab.key}
               type="button"
               onClick={() => onChange(tab.key)}
-              className={`relative flex h-14 flex-col items-center justify-center gap-1 rounded-lg text-xs font-semibold ${
+              className={`relative flex h-12 flex-col items-center justify-center gap-0.5 rounded-lg text-[11px] font-semibold sm:h-14 sm:gap-1 sm:text-xs ${
                 active ? "bg-[#eee8df] text-[#5d6b57]" : "text-[#746f68]"
               }`}
             >
-              <Icon size={18} />
+              <Icon size={17} />
               {tab.label}
               {tab.key === "review" && dueCount > 0 ? (
-                <span className="absolute right-3 top-2 h-2 w-2 rounded-full bg-[#8f2638]" />
+                <span className="absolute right-3 top-1.5 h-2 w-2 rounded-full bg-[#8f2638] sm:top-2" />
               ) : null}
             </button>
           );
@@ -1652,6 +1792,8 @@ function SettingsPanel({
 }
 
 function VoiceSettings({ speech }: { speech: SpeechState }) {
+  const hasGoogleUsEnglish = speech.voices.some((voice) => voice.name.toLowerCase() === DEFAULT_VOICE_NAME);
+
   return (
     <div className="grid gap-3 rounded-lg border border-[#ddd5c8] bg-[#fffdf8] p-3">
       <label className="grid gap-2 text-sm font-semibold" htmlFor="voice-select">
@@ -1673,6 +1815,11 @@ function VoiceSettings({ speech }: { speech: SpeechState }) {
           )}
         </select>
       </label>
+      {!hasGoogleUsEnglish ? (
+        <p className="text-xs leading-5 text-[#746f68]">
+          当前手机浏览器没有提供 Google US English，已自动使用可用的美式英文音色。
+        </p>
+      ) : null}
       <label className="grid gap-2 text-sm font-semibold" htmlFor="voice-rate">
         语速 {speech.rate.toFixed(2)}x
         <input
@@ -1714,10 +1861,13 @@ function useSpeech(): SpeechState {
         .getVoices()
         .filter((voice) => voice.lang.toLowerCase().startsWith("en"))
         .sort((a, b) => scoreVoice(b) - scoreVoice(a));
-      const defaultVoice = nextVoices.find((voice) => voice.name.toLowerCase() === DEFAULT_VOICE_NAME);
+      const defaultVoice = chooseDefaultVoice(nextVoices, savedVoiceURI);
 
       setVoices(nextVoices);
-      setVoiceURIState((current) => current || savedVoiceURI || defaultVoice?.voiceURI || nextVoices[0]?.voiceURI || "");
+      setVoiceURIState((current) => {
+        if (nextVoices.some((voice) => voice.voiceURI === current)) return current;
+        return defaultVoice?.voiceURI || "";
+      });
       setRateState((current) => {
         if (!Number.isFinite(savedRate) || current !== DEFAULT_VOICE_RATE) return current;
         return savedRate;
@@ -1795,14 +1945,39 @@ function useSpeech(): SpeechState {
 
 function scoreVoice(voice: SpeechSynthesisVoice) {
   const name = voice.name.toLowerCase();
-  let score = voice.lang.toLowerCase() === "en-us" ? 50 : 20;
-  if (name === DEFAULT_VOICE_NAME) score += 100;
-  if (name.includes("google") && voice.lang.toLowerCase() === "en-us") score += 60;
-  ["samantha", "ava", "allison", "jenny", "aria", "natural", "premium", "enhanced"].forEach((keyword, index) => {
-    if (name.includes(keyword)) score += 30 - index;
-  });
+  const lang = voice.lang.toLowerCase();
+  let score = lang === "en-us" ? 100 : 20;
+
+  if (name === DEFAULT_VOICE_NAME) score += 300;
+  if (name.includes("google") && lang === "en-us") score += 220;
+  if (name.includes("ava")) score += 140;
+  if (name.includes("samantha")) score += 110;
+  if (name.includes("allison")) score += 90;
+  if (name.includes("susan") || name.includes("jenny") || name.includes("aria")) score += 70;
+  if (name.includes("premium")) score += 40;
+  if (name.includes("enhanced")) score += 30;
+  if (voice.default) score += 10;
+
   ["compact", "novelty", "whisper", "zarvox", "bells", "boing"].forEach((keyword) => {
     if (name.includes(keyword)) score -= 80;
   });
   return score;
+}
+
+function chooseDefaultVoice(voices: SpeechSynthesisVoice[], savedVoiceURI: string) {
+  const savedVoice = voices.find((voice) => voice.voiceURI === savedVoiceURI);
+  if (savedVoice) return savedVoice;
+
+  return (
+    voices.find((voice) => voice.name.toLowerCase() === DEFAULT_VOICE_NAME) ??
+    voices.find((voice) => voice.name.toLowerCase().includes("google") && voice.lang.toLowerCase() === "en-us") ??
+    voices.find((voice) => voice.name.toLowerCase().includes("ava") && voice.name.toLowerCase().includes("premium")) ??
+    voices.find((voice) => voice.name.toLowerCase().includes("ava") && voice.name.toLowerCase().includes("enhanced")) ??
+    voices.find((voice) => voice.name.toLowerCase().includes("ava")) ??
+    voices.find((voice) => voice.name.toLowerCase().includes("samantha") && voice.name.toLowerCase().includes("enhanced")) ??
+    voices.find((voice) => voice.name.toLowerCase().includes("samantha")) ??
+    voices.find((voice) => voice.name.toLowerCase().includes("allison")) ??
+    voices.find((voice) => voice.lang.toLowerCase() === "en-us") ??
+    voices[0]
+  );
 }
